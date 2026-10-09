@@ -16,6 +16,7 @@ import { Step4Pricing } from '@/components/estimate/Step4Pricing';
 import { Step5Value } from '@/components/estimate/Step5Value';
 import { LiveSummary } from '@/components/estimate/LiveSummary';
 import { exportExcel, exportPdf } from '@/lib/export/download';
+import { getQueryParam } from '@/lib/nav';
 
 const STEPS = [
   { n: 1, label: 'Process', sub: 'Industry, function, process' },
@@ -38,7 +39,7 @@ export default function EstimatePage() {
   }, [step]);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('new')) setStarting(true);
+    if (getQueryParam('new')) setStarting(true);
   }, []);
 
   if (!est || starting) return <StartEstimate onDone={() => { setStarting(false); setStep(1); }} onCancel={est ? () => setStarting(false) : undefined} />;
@@ -55,10 +56,10 @@ export default function EstimatePage() {
             <Button size="sm" onClick={() => setStarting(true)}>
               <Plus size={14} /> New estimate
             </Button>
-            <Button size="sm" onClick={() => exportPdf('estimate', est, res, rc).then(() => log('Exported PDF', `Pricing Estimate — ${est.name}`))}>
+            <Button size="sm" onClick={() => exportPdf('estimate', est, res, rc).then((ok) => ok && log('Exported PDF', `Pricing Estimate — ${est.name}`))}>
               <FileDown size={14} /> PDF
             </Button>
-            <Button size="sm" onClick={() => exportExcel(est, res, rc).then(() => log('Exported Excel', est.name))}>
+            <Button size="sm" onClick={() => exportExcel(est, res, rc).then((ok) => ok && log('Exported Excel', est.name))}>
               <FileSpreadsheet size={14} /> Excel
             </Button>
           </>

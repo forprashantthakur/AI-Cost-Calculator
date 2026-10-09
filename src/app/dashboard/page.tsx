@@ -41,10 +41,10 @@ export default function DashboardPage() {
             <Button size="sm" href="/estimate/">
               <Pencil size={14} /> Edit inputs
             </Button>
-            <Button size="sm" onClick={() => exportPdf('estimate', est, res, rc).then(() => log('Exported PDF', `Pricing Estimate — ${est.name}`))}>
+            <Button size="sm" onClick={() => exportPdf('estimate', est, res, rc).then((ok) => ok && log('Exported PDF', `Pricing Estimate — ${est.name}`))}>
               <FileDown size={14} /> Pricing estimate PDF
             </Button>
-            <Button size="sm" variant="primary" onClick={() => exportExcel(est, res, rc).then(() => log('Exported Excel', est.name))}>
+            <Button size="sm" variant="primary" onClick={() => exportExcel(est, res, rc).then((ok) => ok && log('Exported Excel', est.name))}>
               <FileSpreadsheet size={14} /> Excel workbook
             </Button>
           </>

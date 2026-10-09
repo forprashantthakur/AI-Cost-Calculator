@@ -47,7 +47,7 @@ export default function ComparePage() {
         title="Seven commercial models, one cost base"
         sub="Every model prices the same delivery cost. The cost-recovery matrix proves that each cost is recovered exactly once — never twice."
         actions={
-          <Button size="sm" onClick={() => exportPdf('compare', est, res, rc).then(() => log('Exported PDF', `Commercial Model Comparison — ${est.name}`))}>
+          <Button size="sm" onClick={() => exportPdf('compare', est, res, rc).then((ok) => ok && log('Exported PDF', `Commercial Model Comparison — ${est.name}`))}>
             <FileDown size={14} /> Comparison PDF
           </Button>
         }

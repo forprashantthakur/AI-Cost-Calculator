@@ -19,6 +19,7 @@ export default function LibraryPage() {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const current = s.estimates.find((e) => e.id === s.currentId) ?? null;
   const currentRes = useMemo(() => (current ? computeEstimate(current, rc) : null), [current, rc]);
@@ -116,18 +117,28 @@ export default function LibraryPage() {
                   <Button size="sm" variant="ghost" onClick={() => s.duplicate(e.id)} title={sample ? 'Copy to my estimates' : 'Duplicate'}>
                     <Copy size={14} />
                   </Button>
-                  {!sample && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title="Delete"
-                      onClick={() => {
-                        if (confirm(`Delete "${e.name}"? This cannot be undone.`)) s.remove(e.id);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  )}
+                  {!sample &&
+                    (confirmId === e.id ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => {
+                            s.remove(e.id);
+                            setConfirmId(null);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setConfirmId(null)}>
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="ghost" title="Delete" onClick={() => setConfirmId(e.id)}>
+                        <Trash2 size={14} />
+                      </Button>
+                    ))}
                 </div>
               </Td>
             </tr>
@@ -186,7 +197,7 @@ export default function LibraryPage() {
                 key={r.kind}
                 type="button"
                 disabled={busy !== null}
-                onClick={() => run(r.kind, async () => { await exportPdf(r.kind, current, currentRes, rc); s.log('Exported PDF', `${r.title} — ${current.name}`); })}
+                onClick={() => run(r.kind, async () => { if (await exportPdf(r.kind, current, currentRes, rc)) s.log('Exported PDF', `${r.title} — ${current.name}`); })}
                 className="flex items-start gap-3 rounded-xl border border-line p-4 text-left transition-colors hover:border-brand/40 hover:bg-brand-50/40 disabled:opacity-60"
               >
                 <FileDown size={18} className="mt-0.5 shrink-0 text-brand" />
@@ -199,7 +210,7 @@ export default function LibraryPage() {
             <button
               type="button"
               disabled={busy !== null}
-              onClick={() => run('xlsx', async () => { await exportExcel(current, currentRes, rc); s.log('Exported Excel', current.name); })}
+              onClick={() => run('xlsx', async () => { if (await exportExcel(current, currentRes, rc)) s.log('Exported Excel', current.name); })}
               className="flex items-start gap-3 rounded-xl border border-brand/40 bg-brand-50/50 p-4 text-left transition-colors hover:bg-brand-50 disabled:opacity-60"
             >
               <FileSpreadsheet size={18} className="mt-0.5 shrink-0 text-brand" />

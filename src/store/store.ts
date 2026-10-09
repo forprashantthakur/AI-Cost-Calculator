@@ -53,6 +53,31 @@ interface State {
 
 const now = () => new Date().toISOString();
 
+/** localStorage that never throws (private windows, sandboxed frames, blocked site data). */
+const safeStorage = {
+  getItem: (k: string) => {
+    try {
+      return window.localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (k: string, v: string) => {
+    try {
+      window.localStorage.setItem(k, v);
+    } catch {
+      /* storage unavailable: keep working in memory */
+    }
+  },
+  removeItem: (k: string) => {
+    try {
+      window.localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  },
+};
+
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
@@ -157,7 +182,7 @@ export const useStore = create<State>()(
     {
       name: 'ai-agent-pricing-calculator',
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
       partialize: (s) => ({
         rateCard: s.rateCard,

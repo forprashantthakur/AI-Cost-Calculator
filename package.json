@@ -2,7 +2,7 @@
   "name": "ai-agent-pricing-calculator",
   "version": "1.0.0",
   "private": true,
-  "description": "Enterprise AI Agent Pricing & Value Calculator — from AI agent consumption to business outcomes and commercial value",
+  "description": "Enterprise AI Agent Pricing & Value Calculator \u2014 from AI agent consumption to business outcomes and commercial value",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:single": "vite build --config artifact/vite.config.mts && node scripts/make-artifact.mjs"
   },
   "engines": {
     "node": ">=20.9"
@@ -32,8 +33,11 @@
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9",
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.3"
   }
 }

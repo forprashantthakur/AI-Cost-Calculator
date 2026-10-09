@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const [draft, setDraft] = useState<RateCard>(s.rateCard);
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => setDraft(s.rateCard), [s.rateCard]);
   const admin = s.role === 'admin';
   const dirty = JSON.stringify(draft) !== JSON.stringify(s.rateCard);
@@ -367,16 +368,28 @@ export default function SettingsPage() {
           </tbody>
         </table>
         <div className="mt-4">
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={ro}
-            onClick={() => {
-              if (confirm('Replace the working rate card with the original illustrative defaults? You can still publish or discard.')) setDraft({ ...DEFAULT_RATE_CARD, version: bumpVersion(s.rateCard.version) });
-            }}
-          >
-            <RotateCcw size={13} /> Load illustrative defaults
-          </Button>
+          {confirmReset ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-ink-2">Replace the working rate card with the illustrative defaults? You can still publish or discard.</span>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  setDraft({ ...DEFAULT_RATE_CARD, version: bumpVersion(s.rateCard.version) });
+                  setConfirmReset(false);
+                }}
+              >
+                Replace
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="danger" disabled={ro} onClick={() => setConfirmReset(true)}>
+              <RotateCcw size={13} /> Load illustrative defaults
+            </Button>
+          )}
         </div>
       </Card>
     </div>

@@ -61,7 +61,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur">
+      <header className="sticky top-[env(safe-area-inset-top,0px)] z-40 border-b border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-4 sm:px-6">
           <Link href="/" className="flex min-w-0 items-center gap-2.5">
             <Logo />

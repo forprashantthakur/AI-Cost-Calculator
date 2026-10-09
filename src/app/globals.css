@@ -41,6 +41,9 @@ html {
 }
 
 body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-size: 16px;
   font-family: var(--font-sans);
   font-feature-settings: 'tnum' 1, 'cv11' 1;
 }
