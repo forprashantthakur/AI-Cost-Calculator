@@ -2,6 +2,8 @@
 
 **From AI Agent Consumption to Business Outcomes and Commercial Value.**
 
+**Live app:** https://ai-cost-calculator-kappa-blond.vercel.app
+
 A web application for enterprise AI consulting, AI Agents-as-a-Service, AI FinOps, AgentOps and AI commercialisation teams. A consultant picks an industry, function and process, enters a handful of business assumptions, and gets — in minutes — what an AI agent costs to build and run, what each successful business transaction costs, how to price it under seven commercial models, the provider's gross margin and the client's ROI. It covers business-process agents and the complete IT SDLC.
 
 ![Dashboard](docs/screenshots/dashboard.png)
