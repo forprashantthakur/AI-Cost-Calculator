@@ -91,7 +91,10 @@ npm install
 npm run dev        # http://localhost:3000
 npm test           # engine, Excel and PDF tests
 npm run build      # static site in ./out
+npm run build:single   # one self-contained HTML file in ./dist-single (no server needed)
 ```
+
+`npm run build:single` packages the whole calculator into `dist-single/index.html`, which opens directly in a browser (double-click it) and can be shared as a single file. `dist-single/artifact.html` is the same page without the outer HTML skeleton, for hosts that add their own.
 
 The app is a fully static Next.js export: everything runs in the browser and estimates are stored in `localStorage`. Deploy `out/` to any static host — Vercel (zero config), Netlify, S3/CloudFront, Azure Static Web Apps, or GitHub Pages (set `basePath` in `next.config.mjs` for a project page). Use **Export all (JSON)** to back up or share estimates.
 
@@ -126,6 +129,8 @@ src/
   data/          industries, functions, 89 process templates, rate card, samples
   lib/export/    PDF reports (jsPDF) and formula-driven Excel workbook (ExcelJS)
   app/           Next.js pages: estimate, dashboard, compare, simulator, library, settings, methodology
+artifact/        single-file build (Vite) with a small in-memory router replacing Next.js routing
+scripts/         packaging helpers
   components/    UI kit, charts (Recharts), wizard steps
 test/            Vitest suites
 ```
