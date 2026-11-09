@@ -2,7 +2,7 @@
   "name": "ai-agent-pricing-calculator",
   "version": "1.0.0",
   "private": true,
-  "description": "Enterprise AI Agent Pricing & Value Calculator \u2014 from AI agent consumption to business outcomes and commercial value",
+  "description": "Enterprise AI Agent Pricing & Value Calculator — from AI agent consumption to business outcomes and commercial value",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -22,7 +22,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.54.0",
-    "next": "^16.4.0",
+    "next": "^16.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "recharts": "^3.10.1",
