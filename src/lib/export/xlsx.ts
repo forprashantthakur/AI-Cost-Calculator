@@ -260,6 +260,8 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   ip.input('Implementation mode', est.implMode, { name: 'ImplMode', fmt: 'text', list: ['simple', 'detailed'] });
   ip.input('Implementation delivery cost (simple mode)', est.implSimpleCost, { name: 'ImplSimpleCost', fmt: 'money' });
   ip.input('Target implementation margin', est.implMarginPct / 100, { name: 'ImplMargin', fmt: 'pct' });
+  ip.input('People pricing basis', est.peoplePricing, { name: 'PeoplePricing', fmt: 'text', list: ['discount', 'margin'], unit: 'discount = rack rate × (1 − discount); margin = cost ÷ (1 − margin)' });
+  ip.input('Discount off rack rate', (est.discountPct ?? 0) / 100, { name: 'Discount', fmt: 'pct', unit: 'Implementation fee and AgentOps team fee' });
 
   ip.section('Pricing and commercial terms');
   ip.input('Target provider gross margin', est.targetMargin / 100, { name: 'Margin', fmt: 'pct' });
@@ -295,9 +297,31 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   /* ===================================================================== */
   const rt = new SheetBuilder(wb, 'Rates', [46, 18, 44]);
   rt.title(`Rates — ${rc.version}`, `${rc.source}. Vendor rates in USD; converted at the FX rate below.`);
-  rt.section('Currency and delivery cost');
+  rt.section('Currency');
   rt.input(`FX rate (${cur} per 1 USD)`, rc.fx[cur] ?? 1, { name: 'FxRate', fmt: 'num', unit: `${rc.fxSource} (${rc.fxEffectiveDate})` });
-  rt.input(`Delivery cost index (${cur})`, rc.deliveryCostIndex?.[cur] ?? 1, { name: 'DeliveryIdx', fmt: 'num', unit: 'Scales implementation roles and AgentOps' });
+  rt.input(`People-rate conversion (${cur} per 1 ${rc.resourceCurrency})`, (rc.fx[cur] ?? 1) / (rc.fx[rc.resourceCurrency] ?? 1), { name: 'ResFx', fmt: 'num', unit: 'Converts the people rate card into the estimate currency' });
+
+  rt.section(`People rate card (${rc.resourceCurrency} per hour) — ${rc.resourceRatesSource}, updated ${rc.resourceRatesUpdated}`);
+  header(rt.ws, rt.row, ['Designation', 'Rack rate / hour', 'Cost / hour']);
+  rt.row++;
+  const resRow = new Map<string, number>();
+  for (const r of rc.resourceRates) {
+    rt.ws.getCell(rt.row, 1).value = `${r.memberFirm} · ${r.designation}`;
+    for (const [col, v] of [
+      [2, r.rackRatePerHour],
+      [3, r.costRatePerHour],
+    ] as const) {
+      const cell = rt.ws.getCell(rt.row, col);
+      cell.value = v;
+      cell.font = { color: { argb: INPUT_BLUE }, bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } };
+      cell.numFmt = FMT.money;
+    }
+    resRow.set(r.id, rt.row);
+    rt.row++;
+  }
+  const rackRef = (id: string) => (resRow.has(id) ? `Rates!$B$${resRow.get(id)}` : '0');
+  const costRef = (id: string) => (resRow.has(id) ? `Rates!$C$${resRow.get(id)}` : '0');
   rt.section(`LLM model — ${model.provider} · ${model.name}`);
   rt.input('Input tokens (USD per 1M)', model.inputPer1M, { name: 'ModelIn', fmt: 'money', unit: `${model.source} (${model.effectiveDate})` });
   rt.input('Cached input tokens (USD per 1M)', model.cachedInputPer1M, { name: 'ModelCached', fmt: 'money' });
@@ -314,27 +338,36 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   rt.input(`Hosting multiplier (${est.hosting})`, rc.hostingMultipliers[est.hosting] ?? 1, { name: 'HostingMult' });
   rt.input(`SLA multiplier (${est.sla})`, rc.slaMultipliers[est.sla] ?? 1, { name: 'SlaMult' });
 
-  rt.section('AgentOps components (USD per month, before SLA and delivery index)');
-  header(rt.ws, rt.row, ['Component', 'Base / month', 'Per agent / month']);
+  rt.section('AgentOps team (hours per month before the SLA multiplier; rates from the people rate card)');
+  header(rt.ws, rt.row, ['Role (designation)', 'Base hours / month', 'Hours per agent / month', 'Cost / hour', 'Rack rate / hour']);
   rt.row++;
   const aoStart = rt.row;
-  for (const c of rc.agentOps) {
-    rt.ws.getCell(rt.row, 1).value = c.label;
+  for (const t of rc.agentOpsTeam) {
+    const r = rc.resourceRates.find((x) => x.id === t.resourceId);
+    rt.ws.getCell(rt.row, 1).value = `${t.label} (${r ? `${r.memberFirm} · ${r.designation}` : t.resourceId})`;
     for (const [col, v] of [
-      [2, c.basePerMonth],
-      [3, c.perAgentPerMonth],
+      [2, t.baseHoursPerMonth],
+      [3, t.hoursPerAgentPerMonth],
     ] as const) {
       const cell = rt.ws.getCell(rt.row, col);
       cell.value = v;
       cell.font = { color: { argb: INPUT_BLUE }, bold: true };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } };
-      cell.numFmt = FMT.money;
+      cell.numFmt = FMT.num;
     }
+    const cr = rt.ws.getCell(rt.row, 4);
+    cr.value = { formula: costRef(t.resourceId) };
+    cr.numFmt = FMT.money;
+    const rr = rt.ws.getCell(rt.row, 5);
+    rr.value = { formula: rackRef(t.resourceId) };
+    rr.numFmt = FMT.money;
     rt.row++;
   }
-  const aoEnd = rt.row - 1;
-  wb.definedNames.add(`Rates!$B$${aoStart}:$B$${aoEnd}`, 'AOBase');
-  wb.definedNames.add(`Rates!$C$${aoStart}:$C$${aoEnd}`, 'AOPerAgent');
+  const aoEnd = Math.max(aoStart, rt.row - 1);
+  wb.definedNames.add(`Rates!$B$${aoStart}:$B$${aoEnd}`, 'AOBaseH');
+  wb.definedNames.add(`Rates!$C$${aoStart}:$C$${aoEnd}`, 'AOAgentH');
+  wb.definedNames.add(`Rates!$D$${aoStart}:$D$${aoEnd}`, 'AOCostRate');
+  wb.definedNames.add(`Rates!$E$${aoStart}:$E$${aoEnd}`, 'AORackRate');
 
   rt.section('Complexity: ABU weights and resource effort multipliers');
   rt.input('ABU weight — Low', rc.abuWeights.low, { name: 'WeightLow' });
@@ -450,7 +483,9 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   cs.calc('AI quality / evaluation runs', 'MAX(0,EvalCost)', { name: 'CostEval', fmt: 'money', result: L('evaluation'), cache });
   cs.calc('CI/CD and development environments', 'MAX(0,CicdCost)', { name: 'CostCicd', fmt: 'money', result: L('cicd'), cache });
   cs.calc('Infrastructure & platform subtotal', 'CostInfra+CostObs+CostEval+CostCicd', { name: 'PoolPlatform', fmt: 'money', result: op.pools.platform, cache, bold: true });
-  cs.calc('AgentOps (rate card)', '(SUM(AOBase)+SUM(AOPerAgent)*MAX(0,Agents))*SlaMult*FxRate*DeliveryIdx', { name: 'AgentOpsAuto', fmt: 'money', cache });
+  cs.calc('AgentOps team hours / month', 'SUMPRODUCT(AOBaseH+AOAgentH*MAX(0,Agents))*SlaMult', { name: 'AgentOpsHours', fmt: 'num', cache });
+  cs.calc('AgentOps team at cost (rate card)', 'SUMPRODUCT((AOBaseH+AOAgentH*MAX(0,Agents))*AOCostRate)*SlaMult*ResFx', { name: 'AgentOpsAuto', fmt: 'money', cache });
+  cs.calc('AgentOps team at rack rates', 'IF(AgentOpsOverride="",SUMPRODUCT((AOBaseH+AOAgentH*MAX(0,Agents))*AORackRate)*SlaMult*ResFx,0)', { name: 'AgentOpsRack', fmt: 'money', result: op.agentOpsRackFee ?? 0, cache });
   cs.calc('AgentOps services', 'IF(AgentOpsOverride="",AgentOpsAuto,MAX(0,AgentOpsOverride))', { name: 'PoolAgentOps', fmt: 'money', result: op.pools.agentops, cache, bold: true });
   cs.calc('Human-in-the-loop review', 'ReviewHours*ReviewCostHr', { name: 'CostReview', fmt: 'money', result: L('human-review'), cache });
   cs.calc('Other attributable costs', 'MAX(0,OtherCost)', { name: 'CostOther', fmt: 'money', result: L('other'), cache });
@@ -459,28 +494,38 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   cs.calc('Annual delivery cost', 'TotalCost*12', { fmt: 'money', result: op.annual, cache });
 
   cs.section('One-time implementation');
-  header(cs.ws, cs.row, ['Activity', 'Hours', 'Rate / hour', 'Cost']);
+  header(cs.ws, cs.row, ['Activity (designation)', 'Hours', 'Cost / hour', 'Cost', 'Rack rate / hour', 'Rack fee']);
   cs.row++;
   const iStart = cs.row;
   for (const a of est.implActivities) {
-    const role = rc.implRoles.find((r) => r.id === a.roleId);
-    cs.ws.getCell(cs.row, 1).value = `${a.label} (${role?.label ?? a.roleId})`;
+    const r = rc.resourceRates.find((x) => x.id === a.roleId);
+    cs.ws.getCell(cs.row, 1).value = `${a.label} (${r ? `${r.memberFirm} · ${r.designation}` : a.roleId})`;
     const hc = cs.ws.getCell(cs.row, 2);
     hc.value = a.hours;
     hc.font = { color: { argb: INPUT_BLUE }, bold: true };
     hc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } };
-    const rc_ = cs.ws.getCell(cs.row, 3);
-    rc_.value = { formula: `${role?.ratePerHour ?? 0}*FxRate*DeliveryIdx` };
-    rc_.numFmt = FMT.money;
-    const cc = cs.ws.getCell(cs.row, 4);
-    cc.value = { formula: `MAX(0,B${cs.row})*C${cs.row}` };
-    cc.numFmt = FMT.money;
+    const set = (col: number, formula: string) => {
+      const c = cs.ws.getCell(cs.row, col);
+      c.value = { formula };
+      c.numFmt = FMT.money;
+    };
+    set(3, `${costRef(a.roleId)}*ResFx`);
+    set(4, `MAX(0,B${cs.row})*C${cs.row}`);
+    set(5, `${rackRef(a.roleId)}*ResFx`);
+    set(6, `MAX(0,B${cs.row})*E${cs.row}`);
     cs.row++;
   }
   const iEnd = Math.max(iStart, cs.row - 1);
-  cs.note('Role rate = rate card USD rate × FX × delivery cost index.');
+  cs.note('Cost and rack rates come from the people rate card (Rates sheet) × people-rate conversion.');
   cs.calc('Implementation delivery cost', `IF(ImplMode="simple",MAX(0,ImplSimpleCost),SUM(D${iStart}:D${iEnd}))`, { name: 'ImplCost', fmt: 'money', result: res.implementation.deliveryCost, cache, bold: true });
-  cs.calc('Implementation selling price', 'ImplCost/(1-MAX(0,MIN(0.95,ImplMargin)))', { name: 'ImplPrice', fmt: 'money', result: res.implementation.price, cache, bold: true });
+  cs.calc('Implementation fee at rack rates', `IF(ImplMode="simple",0,SUM(F${iStart}:F${iEnd}))`, { name: 'ImplRack', fmt: 'money', result: res.implementation.rackFee ?? 0, cache });
+  cs.calc(
+    'Implementation selling price',
+    'IF(AND(PeoplePricing="discount",ImplMode<>"simple"),ImplRack*(1-MAX(0,MIN(1,Discount))),ImplCost/(1-MAX(0,MIN(0.95,ImplMargin))))',
+    { name: 'ImplPrice', fmt: 'money', result: res.implementation.price, cache, bold: true },
+  );
+  cs.calc('Implementation margin', 'IF(ImplPrice>0,(ImplPrice-ImplCost)/ImplPrice,0)', { name: 'ImplMarginActual', fmt: 'pct', result: res.implementation.actualMarginPct / 100, cache });
+  cs.calc('Discount that earns the target implementation margin', 'IF(ImplRack>0,1-ImplCost/(1-MAX(0,MIN(0.95,ImplMargin)))/ImplRack,0)', { fmt: 'pct', cache });
 
   /* ===================================================================== */
   /* Pricing (ACU / ABU / price book)                                      */
@@ -505,7 +550,11 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
   pr.calc('Cost recovered by standalone unit prices', 'TotalCost-IF(AgentOpsBilling="separate",PoolAgentOps,0)', { name: 'UnitPool', fmt: 'money', result: res.abu.recoverablePool, cache });
   pr.calc('ABU price', 'IF(AbuOverride="",IFERROR(UnitPool/WeightedAbus/(1-MarginC),0),AbuOverride)', { name: 'AbuPrice', fmt: 'price', result: res.abu.price, cache, bold: true });
   pr.calc('ACU price', 'IF(AcuOverride="",IFERROR(UnitPool/Acus/(1-MarginC),0),AcuOverride)', { name: 'AcuPrice', fmt: 'price', result: res.acu.price, cache, bold: true });
-  pr.calc('Managed AgentOps fee / month', 'IF(AOFeeOverride="",PoolAgentOps/(1-MarginC),AOFeeOverride)', { name: 'AOFee', fmt: 'money', result: res.agentOpsFee, cache, bold: true });
+  pr.calc(
+    'Managed AgentOps fee / month',
+    'IF(AOFeeOverride="",IF(AND(PeoplePricing="discount",AgentOpsOverride=""),AgentOpsRack*(1-MAX(0,MIN(1,Discount))),PoolAgentOps/(1-MarginC)),AOFeeOverride)',
+    { name: 'AOFee', fmt: 'money', result: res.agentOpsFee, cache, bold: true },
+  );
   pr.calc('Fixed monthly run fee', 'TotalCost/(1-MarginC)', { name: 'FixedFee', fmt: 'money', result: res.prices.fixedFee, cache });
   pr.calc('Subscription price per unit', 'IF(SubOverride="",IF(SubUnits>0,UnitPool/(1-MarginC)/SubUnits,0),SubOverride)', { name: 'SubPrice', fmt: 'money', result: res.prices.subscriptionUnitPrice, cache });
   pr.calc('Included ABUs per month', 'IF(IncludedOverride="",WeightedAbus,MAX(0,IncludedOverride))', { name: 'Included', fmt: 'num', result: res.prices.includedAbus, cache });
@@ -756,6 +805,8 @@ export function buildWorkbook(raw: EstimateInputs, res: EstimateResults, rc: Rat
     ['AgentOps fee', 'AOFee', res.agentOpsFee, 'money'],
     ['Implementation delivery cost', 'ImplCost', res.implementation.deliveryCost, 'money'],
     ['Implementation price', 'ImplPrice', res.implementation.price, 'money'],
+    ['Implementation fee at rack rates', 'ImplRack', res.implementation.rackFee ?? 0, 'money'],
+    ['AgentOps team at rack rates', 'AgentOpsRack', op.agentOpsRackFee ?? 0, 'money'],
     ...MODEL_KEYS.flatMap((k) => {
       const m = res.models[k];
       return [

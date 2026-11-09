@@ -49,7 +49,16 @@ describe('Excel pricing workbook', () => {
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pricing-xlsx-'));
       const out = path.join(dir, 'out');
-      const estimates = [...buildSamples(RC), simpleEstimate({ monthlyVolume: 0 }), simpleEstimate({ commercial: { agentOpsBilling: 'separate', minMonthlyCommitment: 5000, volumeTiers: [{ upTo: 500, discountPct: 0 }, { upTo: 1000, discountPct: 7.5 }] } as never }) ];
+      const samples = buildSamples(RC);
+      const estimates = [
+        ...samples,
+        simpleEstimate({ monthlyVolume: 0 }),
+        simpleEstimate({ commercial: { agentOpsBilling: 'separate', minMonthlyCommitment: 5000, volumeTiers: [{ upTo: 500, discountPct: 0 }, { upTo: 1000, discountPct: 7.5 }] } as never }),
+        // People pricing variants: a deep discount, margin pricing, and a discount with a manual AgentOps cost.
+        { ...samples[0], peoplePricing: 'discount' as const, discountPct: 62.5, commercial: { ...samples[0].commercial, agentOpsBilling: 'separate' as const } },
+        { ...samples[0], peoplePricing: 'margin' as const, commercial: { ...samples[0].commercial, agentOpsBilling: 'separate' as const } },
+        { ...samples[1], peoplePricing: 'discount' as const, discountPct: 30, agentOpsOverride: 250000, commercial: { ...samples[1].commercial, agentOpsBilling: 'separate' as const } },
+      ];
       const files: string[] = [];
       for (const [i, est] of estimates.entries()) {
         const res = computeEstimate(est, RC);

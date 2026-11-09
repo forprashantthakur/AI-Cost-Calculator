@@ -34,9 +34,10 @@ export function defaultSdlc(currency: CurrencyCode, rc: RateCard): SdlcInputs {
   };
 }
 
+/** Implementation delivery cost (hours × designation cost rate), in the estimate currency. */
 export function implCostFromActivities(acts: ImplActivityInput[], rc: RateCard, currency: CurrencyCode) {
-  const fx = (rc.fx[currency] ?? 1) * (rc.deliveryCostIndex?.[currency] ?? 1);
-  return acts.reduce((s, a) => s + a.hours * (rc.implRoles.find((r) => r.id === a.roleId)?.ratePerHour ?? 0) * fx, 0);
+  const fx = (rc.fx[currency] ?? 1) / (rc.fx[rc.resourceCurrency] ?? 1);
+  return acts.reduce((s, a) => s + a.hours * (rc.resourceRates.find((r) => r.id === a.roleId)?.costRatePerHour ?? 0) * fx, 0);
 }
 
 /**
@@ -115,6 +116,8 @@ export function createEstimate(
     implSimpleCost: money(implCostFromActivities(acts, rc, opts.currency)),
     implActivities: acts,
     implMarginPct: rc.defaultMargins.implementation,
+    peoplePricing: 'discount',
+    discountPct: rc.defaultDiscountPct ?? 0,
 
     commercial: {
       selectedModel: null,

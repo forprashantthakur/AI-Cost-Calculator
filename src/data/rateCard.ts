@@ -1,23 +1,61 @@
-import type { CurrencyCode, RateCard } from '@/engine/types';
+import type { CurrencyCode, RateCard, ResourceRate } from '@/engine/types';
+
+/** Key for a designation: "Implement" + "Senior Consultant" → "implement-senior-consultant". */
+export const resourceKey = (memberFirm: string, designation: string) =>
+  `${memberFirm} ${designation}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const R = (memberFirm: string, designation: string, rackRatePerHour: number, costRatePerHour: number): ResourceRate => ({
+  id: resourceKey(memberFirm, designation),
+  memberFirm,
+  designation,
+  rackRatePerHour,
+  costRatePerHour,
+});
+
+/** People rate card — Pricing Tool v2.4, last rate update 08 Oct 2026. INR per hour. */
+export const DEFAULT_RESOURCE_RATES: ResourceRate[] = [
+  R('Advise', 'Partner', 34000, 0),
+  R('Advise', 'Director', 25000, 12819),
+  R('Advise', 'Associate Director', 18000, 3989),
+  R('Advise', 'Manager', 13000, 2630),
+  R('Advise', 'Senior Consultant', 10000, 1887),
+  R('Advise', 'Consultant', 7500, 1150),
+  R('Advise', 'Analyst', 4500, 1031),
+  R('Operate', 'Director', 19000, 12571),
+  R('Operate', 'Associate Director', 10000, 4387),
+  R('Operate', 'Manager', 6000, 2361),
+  R('Operate', 'Senior Consultant', 4500, 1610),
+  R('Operate', 'Consultant', 3500, 1115),
+  R('Operate', 'Analyst', 2500, 939),
+  R('Implement', 'Director', 19000, 10724),
+  R('Implement', 'Associate Director', 10000, 4150),
+  R('Implement', 'Manager', 6000, 2784),
+  R('Implement', 'Senior Consultant', 4500, 1864),
+  R('Implement', 'Consultant', 3500, 1082),
+  R('Implement', 'Analyst', 2500, 932),
+];
 
 /**
- * DEFAULT RATE CARD — ILLUSTRATIVE ONLY.
+ * DEFAULT RATE CARD.
  *
- * None of these figures is a vendor quote or a published market price. Model
- * tiers are deliberately generic ("Illustrative frontier tier") rather than
- * named vendor products so that no current vendor pricing is implied.
- * Replace every rate with contracted or published rates — and record the
- * source and effective date — in Settings before any client use.
+ * People rates (designations with rack and cost rates) come from the Pricing
+ * Tool v2.4 rate card. Model, cloud and tool rates are illustrative
+ * placeholders, not vendor quotes: model tiers are deliberately generic.
+ * Replace them with contracted or published rates — and record the source and
+ * effective date — in Settings before any client use.
  */
 export const DEFAULT_RATE_CARD: RateCard = {
-  version: 'RC-2026.10-ILLUSTRATIVE',
-  effectiveDate: '2026-10-01',
-  source: 'Illustrative placeholder rates — replace with contracted rates before client use',
+  version: 'RC-2026.11',
+  effectiveDate: '2026-11-09',
+  source: 'People rates from the Pricing Tool v2.4 rate card (08 Oct 2026); model, cloud and tool rates are illustrative placeholders — replace before client use',
   baseCurrency: 'USD',
   fx: { USD: 1, INR: 85, EUR: 0.92, GBP: 0.79, AUD: 1.52, SGD: 1.35, AED: 3.6725, JPY: 150, CAD: 1.37 },
   fxEffectiveDate: '2026-10-01',
   fxSource: 'Illustrative conversion rates — replace with treasury or contract FX rates',
-  deliveryCostIndex: { USD: 1, INR: 0.45, EUR: 1, GBP: 1, AUD: 1, SGD: 0.9, AED: 0.9, JPY: 1, CAD: 1 },
   models: [
     {
       id: 'frontier',
@@ -74,35 +112,32 @@ export const DEFAULT_RATE_CARD: RateCard = {
   observabilityPerAgentPerMonth: 80,
   hostingMultipliers: { shared: 1, private: 1.6, onprem: 2.2 },
   slaMultipliers: { standard: 1, enhanced: 1.35, premium: 1.8 },
-  agentOps: [
-    { id: 'monitoring', label: 'Agent monitoring', basePerMonth: 200, perAgentPerMonth: 100 },
-    { id: 'incident', label: 'Incident management', basePerMonth: 100, perAgentPerMonth: 60 },
-    { id: 'support', label: 'L1/L2/L3 support', basePerMonth: 400, perAgentPerMonth: 180 },
-    { id: 'evaluation', label: 'Agent evaluation', basePerMonth: 150, perAgentPerMonth: 90 },
-    { id: 'optimization', label: 'Prompt / model optimisation', basePerMonth: 150, perAgentPerMonth: 100 },
-    { id: 'release', label: 'Release management', basePerMonth: 100, perAgentPerMonth: 40 },
-    { id: 'governance', label: 'Governance reporting', basePerMonth: 100, perAgentPerMonth: 30 },
-  ],
-  implRoles: [
-    { id: 'lead', label: 'Engagement lead', ratePerHour: 95 },
-    { id: 'architect', label: 'Solution architect', ratePerHour: 85 },
-    { id: 'ai', label: 'AI engineer', ratePerHour: 65 },
-    { id: 'data', label: 'Data / integration engineer', ratePerHour: 60 },
-    { id: 'qa', label: 'QA / evaluation engineer', ratePerHour: 45 },
-    { id: 'devops', label: 'DevOps engineer', ratePerHour: 60 },
-    { id: 'change', label: 'Change & training consultant', ratePerHour: 55 },
+  resourceCurrency: 'INR',
+  resourceRatesUpdated: '2026-10-08',
+  resourceRatesSource: 'Pricing Tool v2.4 rate card',
+  defaultDiscountPct: 0,
+  resourceRates: DEFAULT_RESOURCE_RATES,
+  agentOpsTeam: [
+    { id: 'monitoring', label: 'Agent monitoring', resourceId: 'operate-analyst', baseHoursPerMonth: 8, hoursPerAgentPerMonth: 4 },
+    { id: 'incident', label: 'Incident management', resourceId: 'operate-consultant', baseHoursPerMonth: 4, hoursPerAgentPerMonth: 2 },
+    { id: 'support', label: 'L1/L2/L3 support', resourceId: 'operate-consultant', baseHoursPerMonth: 16, hoursPerAgentPerMonth: 8 },
+    { id: 'evaluation', label: 'Agent evaluation', resourceId: 'operate-senior-consultant', baseHoursPerMonth: 6, hoursPerAgentPerMonth: 3 },
+    { id: 'optimization', label: 'Prompt / model optimisation', resourceId: 'operate-senior-consultant', baseHoursPerMonth: 6, hoursPerAgentPerMonth: 3 },
+    { id: 'release', label: 'Release management', resourceId: 'operate-manager', baseHoursPerMonth: 3, hoursPerAgentPerMonth: 1 },
+    { id: 'governance', label: 'Governance reporting', resourceId: 'operate-associate-director', baseHoursPerMonth: 2, hoursPerAgentPerMonth: 1 },
   ],
   implActivities: [
-    { id: 'discovery', label: 'Discovery and process assessment', roleId: 'lead', baseHours: 60 },
-    { id: 'architecture', label: 'Solution architecture', roleId: 'architect', baseHours: 60 },
-    { id: 'development', label: 'AI agent development', roleId: 'ai', baseHours: 160 },
-    { id: 'prompt', label: 'Prompt and context engineering', roleId: 'ai', baseHours: 80 },
-    { id: 'rag', label: 'RAG and knowledge integration', roleId: 'data', baseHours: 80 },
-    { id: 'integration', label: 'Enterprise API / ERP integration', roleId: 'data', baseHours: 120 },
-    { id: 'security', label: 'Security and governance', roleId: 'architect', baseHours: 40 },
-    { id: 'testing', label: 'Testing and evaluation', roleId: 'qa', baseHours: 100 },
-    { id: 'deployment', label: 'Deployment', roleId: 'devops', baseHours: 40 },
-    { id: 'training', label: 'Training and change management', roleId: 'change', baseHours: 40 },
+    { id: 'discovery', label: 'Discovery and process assessment', roleId: 'advise-manager', baseHours: 60 },
+    { id: 'architecture', label: 'Solution architecture', roleId: 'advise-associate-director', baseHours: 60 },
+    { id: 'development', label: 'AI agent development', roleId: 'implement-senior-consultant', baseHours: 160 },
+    { id: 'prompt', label: 'Prompt and context engineering', roleId: 'implement-consultant', baseHours: 80 },
+    { id: 'rag', label: 'RAG and knowledge integration', roleId: 'implement-consultant', baseHours: 80 },
+    { id: 'integration', label: 'Enterprise API / ERP integration', roleId: 'implement-senior-consultant', baseHours: 120 },
+    { id: 'security', label: 'Security and governance', roleId: 'advise-senior-consultant', baseHours: 40 },
+    { id: 'testing', label: 'Testing and evaluation', roleId: 'implement-analyst', baseHours: 100 },
+    { id: 'deployment', label: 'Deployment', roleId: 'implement-consultant', baseHours: 40 },
+    { id: 'training', label: 'Training and change management', roleId: 'advise-consultant', baseHours: 40 },
+    { id: 'management', label: 'Engagement and delivery management', roleId: 'implement-manager', baseHours: 60 },
   ],
   implComplexityFactor: { low: 0.7, medium: 1, high: 1.6 },
   implPerExtraAgent: 0.3,
@@ -127,7 +162,10 @@ export const DEFAULT_RATE_CARD: RateCard = {
   effortMultipliers: { low: 0.7, medium: 1, high: 2 },
   defaultMargins: { implementation: 30, run: 40 },
   fteHoursPerMonth: 160,
-  changeLog: [{ date: '2026-10-01', version: 'RC-2026.10-ILLUSTRATIVE', note: 'Initial illustrative rate card' }],
+  changeLog: [
+    { date: '2026-11-09', version: 'RC-2026.11', note: 'People rate card (Advise, Implement, Operate) with rack and cost rates; discount pricing' },
+    { date: '2026-10-01', version: 'RC-2026.10-ILLUSTRATIVE', note: 'Initial illustrative rate card' },
+  ],
 };
 
 export const CURRENCIES: { code: CurrencyCode; symbol: string; label: string; locale: string }[] = [

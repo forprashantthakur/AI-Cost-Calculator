@@ -39,18 +39,26 @@ export default function Methodology() {
           <br />
           OCR = Submitted × pages × effort × rate (once per document — retries reuse text)
           <br />
+          AgentOps hours = Σ (base hours + hours per agent × agents) × SLA multiplier, per team role
+          <br />
+          AgentOps cost = Σ role hours × designation cost rate
+          <br />
           Total = AI consumption + infrastructure & platform + AgentOps + human review & other
         </F>
-        <p>Cached input tokens are billed once, at the cached rate, and never also at the full input rate. Monitoring tooling sits in platform cost; monitoring staff effort sits in AgentOps — so neither is counted twice. Vendor rates are in USD and converted at the rate-card FX rate; provider labour (implementation, AgentOps) is scaled by the delivery cost index of the estimate currency.</p>
+        <p>Cached input tokens are billed once, at the cached rate, and never also at the full input rate. Monitoring tooling sits in platform cost; monitoring staff effort sits in AgentOps — so neither is counted twice. Vendor rates are in USD and converted at the rate-card FX rate. People costs (implementation and the AgentOps team) come from the people rate card — each designation has a rack rate (list price) and a cost rate per hour — converted from the rate card&apos;s currency at the FX rate.</p>
       </Section>
 
       <Section title="3. Implementation">
         <F>
-          Detailed: delivery cost = Σ hours × role rate × FX × delivery index
+          Detailed: delivery cost = Σ hours × designation cost rate · rack fee = Σ hours × designation rack rate
           <br />
-          Implementation price = delivery cost ÷ (1 − implementation margin)
+          At a discount: implementation price = rack fee × (1 − discount) · margin earned = (price − cost) ÷ price
+          <br />
+          On margin: implementation price = delivery cost ÷ (1 − implementation margin)
+          <br />
+          Discount that earns the target margin = 1 − (cost ÷ (1 − target margin)) ÷ rack fee
         </F>
-        <p>Implementation is a one-time figure and never enters monthly run cost or unit prices.</p>
+        <p>Implementation is a one-time figure and never enters monthly run cost or unit prices. The same discount applies to a separately billed AgentOps fee: AgentOps fee = team hours × rack rate × (1 − discount). When AgentOps is bundled into unit prices, it is recovered at the target margin. Simple mode and a manual AgentOps cost have no rack fee, so they price on margin.</p>
       </Section>
 
       <Section title="4. ACU — AI Consumption Unit">

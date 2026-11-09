@@ -48,24 +48,41 @@ export interface ModelRate {
   illustrative: boolean;
 }
 
-export interface AgentOpsComponentRate {
+/**
+ * One designation on the people rate card (for example "Implement · Manager").
+ * Rates are per hour in the rate card's resource currency.
+ */
+export interface ResourceRate {
+  /** Stable key, e.g. "implement-manager". */
   id: string;
-  label: string;
-  /** USD per month, before SLA multiplier. */
-  basePerMonth: number;
-  perAgentPerMonth: number;
+  /** Member firm or practice: Advise, Implement, Operate… */
+  memberFirm: string;
+  designation: string;
+  /** Standard hourly rack rate — the list price charged to clients. */
+  rackRatePerHour: number;
+  /** Standard hourly delivery cost to the provider. */
+  costRatePerHour: number;
 }
 
-export interface ImplRole {
+/** One role in the AgentOps team: hours per month staffed from a designation. */
+export interface AgentOpsRoleDef {
   id: string;
   label: string;
-  /** USD delivery cost per hour. */
-  ratePerHour: number;
+  /** ResourceRate id. */
+  resourceId: string;
+  /** Hours per month regardless of agent count, before the SLA multiplier. */
+  baseHoursPerMonth: number;
+  /** Additional hours per month for each AI agent, before the SLA multiplier. */
+  hoursPerAgentPerMonth: number;
 }
+
+/** How people-based fees (implementation, AgentOps team) are priced. */
+export type PeoplePricing = 'discount' | 'margin';
 
 export interface ImplActivityDef {
   id: string;
   label: string;
+  /** ResourceRate id of the designation doing the work. */
   roleId: string;
   /** Hours at medium complexity for one agent. */
   baseHours: number;
@@ -91,13 +108,8 @@ export interface RateCard {
   fx: Record<CurrencyCode, number>;
   fxEffectiveDate: string;
   fxSource: string;
-  /**
-   * Local delivery cost index by estimate currency (USD rate card = 1.00).
-   * Scales provider labour — implementation roles and AgentOps — for markets
-   * where delivery costs differ from the USD rate card. Cloud, model and tool
-   * rates are global and are never indexed.
-   */
-  deliveryCostIndex: Record<CurrencyCode, number>;
+  /** Legacy (rate cards before RC-2026.11): no longer applied. People costs come from `resourceRates`. */
+  deliveryCostIndex?: Record<CurrencyCode, number>;
   models: ModelRate[];
   /** USD unit rates. */
   ocrPerPage: number;
@@ -110,8 +122,16 @@ export interface RateCard {
   observabilityPerAgentPerMonth: number;
   hostingMultipliers: Record<HostingKey, number>;
   slaMultipliers: Record<SlaKey, number>;
-  agentOps: AgentOpsComponentRate[];
-  implRoles: ImplRole[];
+  /** People rate card: designations with rack and cost rates per hour, in `resourceCurrency`. */
+  resourceRates: ResourceRate[];
+  resourceCurrency: CurrencyCode;
+  /** Date the people rates were last updated (ISO). */
+  resourceRatesUpdated: string;
+  resourceRatesSource: string;
+  /** Discount off rack rate that new estimates start with (%). */
+  defaultDiscountPct: number;
+  /** AgentOps team staffing, costed at the designations' cost rates. */
+  agentOpsTeam: AgentOpsRoleDef[];
   implActivities: ImplActivityDef[];
   implComplexityFactor: Record<Complexity, number>;
   /** Extra implementation effort per additional agent (fraction of base). */
@@ -305,6 +325,12 @@ export interface EstimateInputs {
   implActivities: ImplActivityInput[];
   implMarginPct: number;
 
+  /* People pricing (implementation and the AgentOps team) */
+  /** 'discount' = rack rate × hours × (1 − discount); 'margin' = cost ÷ (1 − target margin). */
+  peoplePricing: PeoplePricing;
+  /** Discount off rack rate, % (used when peoplePricing = 'discount'). */
+  discountPct: number;
+
   commercial: CommercialTerms;
   value: ValueInputs;
   sdlc: SdlcInputs | null;
@@ -353,10 +379,23 @@ export interface TokenResult {
 
 export interface ImplementationResult {
   mode: 'simple' | 'detailed';
-  activities: { id: string; label: string; role: string; hours: number; rate: number; cost: number }[];
+  activities: { id: string; label: string; role: string; hours: number; rate: number; cost: number; rackRate: number; rackFee: number }[];
   hours: number;
   deliveryCost: number;
+  /** Target implementation margin input (%), used when pricing on margin. */
   marginPct: number;
+  /** Basis actually applied (discount needs a rack fee, so simple mode prices on margin). */
+  pricingBasis: PeoplePricing;
+  /** Rack-rate fee (hours × rack rate) before discount; null in simple mode. */
+  rackFee: number | null;
+  /** Discount input (%). */
+  discountPct: number;
+  /** Discount the selling price represents against the rack fee (%); null without a rack fee. */
+  effectiveDiscountPct: number | null;
+  /** Gross margin the selling price earns (%). */
+  actualMarginPct: number;
+  /** Discount off rack rate that would deliver the target implementation margin (%). */
+  discountAtTargetMargin: number | null;
   price: number;
 }
 
@@ -368,8 +407,10 @@ export interface OperatingResult {
   annual: number;
   perSubmittedTxn: number | null;
   perAgent: number | null;
-  agentOpsComponents: { id: string; label: string; monthly: number }[];
+  agentOpsComponents: { id: string; label: string; designation: string; hours: number; costRate: number; rackRate: number; monthly: number; rackMonthly: number }[];
   agentOpsOverridden: boolean;
+  /** AgentOps team at rack rates per month; null when the AgentOps cost is overridden. */
+  agentOpsRackFee: number | null;
   failureAndRetryCost: number;
 }
 
@@ -542,6 +583,8 @@ export interface EstimateResults {
   abu: AbuResult;
   agentOpsBilling: AgentOpsBilling;
   agentOpsFee: number;
+  /** How the AgentOps fee was set: rack rate less discount, cost plus margin, or a customer-specific override. */
+  agentOpsFeeBasis: 'discount' | 'margin' | 'override';
   recommendation: Recommendation;
   models: Record<ModelKey, ModelResult>;
   selectedModel: ModelKey;

@@ -62,3 +62,12 @@ export const dateFmt = (iso: string) => {
 };
 
 export const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "2026-10-08" → "08 Oct 2026" (date only, no time zone shift). */
+export const dateLabel = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].at(Number(m[2]) - 1) ?? m[2];
+  return `${m[3]} ${mon} ${m[1]}`;
+};

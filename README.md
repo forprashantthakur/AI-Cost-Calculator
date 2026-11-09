@@ -8,7 +8,7 @@ A web application for enterprise AI consulting, AI Agents-as-a-Service, AI FinOp
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-> **Illustrative data — replace before client use.** Every default rate (model token prices, OCR, cloud, AgentOps, implementation roles, FX) is a placeholder, not a vendor quote. Model tiers are deliberately generic ("Illustrative frontier tier"). Sample client names are fictitious. Replace rates with contracted or published figures — with source references and effective dates — in **Settings** before using any output with a client.
+> **Illustrative data — replace before client use.** People rates (implementation and AgentOps designations) come from the Pricing Tool v2.4 rate card. Every other default rate (model token prices, OCR, cloud, FX) is a placeholder, not a vendor quote. Model tiers are deliberately generic ("Illustrative frontier tier"). Sample client names are fictitious. Replace rates with contracted or published figures — with source references and effective dates — in **Settings** before using any output with a client.
 
 ## What it answers
 
@@ -30,7 +30,7 @@ A web application for enterprise AI consulting, AI Agents-as-a-Service, AI FinOp
 | **Compare Models** | All seven commercial models side by side, three-year projection, the **cost-recovery matrix** (proof that no cost is recovered twice) and the full commercial-terms editor. |
 | **Scenario Simulator** | Sliders for volume, completion rate, model, tokens, agents, AgentOps, complexity, margin and subscription price. Baseline / Optimized / Stress presets. Shows *repriced* results (what you would quote now) and *locked-price* results (what happens to margin on a signed deal). |
 | **Saved Estimates & Reports** | Project library (auto-saved in the browser), 12 sample projects, JSON import/export, audit trail, five PDF reports and the editable Excel workbook. |
-| **Settings** | Version-controlled rate card: LLM provider/model rates with effective dates and sources, OCR, orchestration, infrastructure, AgentOps, FX and delivery-cost index, ACU methodology and weights, ABU weights, margins, and editable process templates. Role-based edit access (demo). |
+| **Settings** | Version-controlled rate card: the **people rate card** (designations by member firm — Advise, Implement, Operate — with rack and cost rates per hour, last-update date and default discount, all editable), LLM provider/model rates with effective dates and sources, OCR, orchestration, infrastructure, the AgentOps team, FX, ACU methodology and weights, ABU weights, margins, and editable process templates. Role-based edit access (demo). |
 
 ## Screenshots
 
@@ -54,6 +54,8 @@ All calculations run in one deterministic engine (`src/engine`) using `decimal.j
 | Volume funnel | Unique = submitted × (1 − duplicates) · Executions = submitted × (1 + retries) · Accepted = unique × success rate |
 | LLM cost | uncached input × input rate + cached input × cached rate + output × output rate (cached tokens billed once) |
 | Total monthly cost | AI consumption + infrastructure & platform + AgentOps + human review & other |
+| Implementation | cost = Σ hours × designation cost rate · rack fee = Σ hours × rack rate · price = rack fee × (1 − discount), or cost ÷ (1 − implementation margin) |
+| AgentOps team | hours = (base + per agent × agents) × SLA multiplier per role · cost = hours × cost rate · separate fee = hours × rack rate × (1 − discount), or cost ÷ (1 − margin) |
 | ACU — Method A | eligible AI consumption cost ÷ reference cost per ACU (default ₹1 = 1 ACU) |
 | ACU — Method B | Σ measured resource quantity × configured ACU factor (one token ≠ one ACU) |
 | Weighted ABUs | accepted unique transactions × complexity weight (Low 1.0 · Medium 1.5 · High 3.0) |

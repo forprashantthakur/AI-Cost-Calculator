@@ -1,6 +1,6 @@
 /** Plain-language explanations for every important metric (used in tooltips). */
 export const TIPS = {
-  implementationPrice: 'One-time selling price for discovery, build, integration, testing, deployment and change management. Price = implementation delivery cost ÷ (1 − implementation margin).',
+  implementationPrice: 'One-time selling price for discovery, build, integration, testing, deployment and change management. At a discount: price = hours × rack rate × (1 − discount). On margin: price = delivery cost (hours × cost rate) ÷ (1 − implementation margin).',
   monthlyCost: 'Total monthly delivery cost = AI consumption + infrastructure & platform + AgentOps + human review & other attributable costs. Includes failed executions and retries.',
   costPerAbu: 'Fully loaded monthly delivery cost ÷ accepted weighted ABUs. The cost of failed attempts and retries is carried by the accepted outcomes.',
   abuPrice: 'Recommended price per ABU = cost per ABU ÷ (1 − target margin). If AgentOps is billed as a separate fee, its cost is excluded here so it is never recovered twice.',
@@ -19,7 +19,7 @@ export const TIPS = {
   payback: 'Months to recover the implementation price from monthly net benefit (financial benefit − monthly client charge).',
   annualRevenue: 'Year-1 revenue = implementation price + 12 × monthly recurring revenue.',
   tcv: 'Total contract value: revenue over the full contract term, including annual escalation and volume growth.',
-  agentOps: 'Run-the-agent services: monitoring, incident management, L1/L2/L3 support, evaluation, optimisation, release management and governance reporting.',
+  agentOps: 'Run-the-agent services by the Operate team: monitoring, incident management, L1/L2/L3 support, evaluation, optimisation, release management and governance reporting. Cost = team hours × designation cost rate.',
   recovery: 'Each cost pool is assigned to exactly one revenue component (or passed through to the client, or carried at risk under gainshare). This prevents the same cost being recovered twice.',
   productivity: 'Hours saved ÷ current manual hours. Transactions the agent does not complete fall back to fully manual handling.',
   fte: 'Hours saved ÷ productive hours per FTE per month (Settings). Capacity that can be redeployed — not headcount reduction unless the client decides so.',

@@ -25,6 +25,14 @@ export default function SettingsPage() {
   useEffect(() => setDraft(s.rateCard), [s.rateCard]);
   const admin = s.role === 'admin';
   const dirty = JSON.stringify(draft) !== JSON.stringify(s.rateCard);
+  const designationGroups = useMemo(
+    () =>
+      Array.from(new Set(draft.resourceRates.map((r) => r.memberFirm))).map((firm) => ({
+        label: firm || '—',
+        options: draft.resourceRates.filter((r) => r.memberFirm === firm).map((r) => ({ value: r.id, label: `${r.memberFirm} · ${r.designation}` })),
+      })),
+    [draft.resourceRates],
+  );
   const ro = !admin;
 
   const up = (fn: (r: RateCard) => RateCard) => setDraft((d) => fn(structuredClone(d)));
@@ -43,7 +51,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Settings — pricing rates, templates and assumptions"
         title="Rate card and assumptions"
-        sub="Administer the illustrative rate card: LLM and unit rates, infrastructure, AgentOps, FX, ACU methodology, ABU weights, margins and process templates. Publishing creates a new version; history is kept and can be restored."
+        sub="Administer the rate card: people rates (rack and cost by designation), LLM and unit rates, infrastructure, the AgentOps team, FX, ACU methodology, ABU weights, margins and process templates. Publishing creates a new version; history is kept and can be restored."
         actions={
           <>
             <Button size="sm" disabled={!dirty || ro} onClick={() => setDraft(s.rateCard)}>
@@ -85,7 +93,7 @@ export default function SettingsPage() {
       )}
 
       <Card>
-        <CardTitle sub="Every rate is illustrative until replaced. Record the source and effective date of contracted rates." action={dirty ? <Badge tone="warn">Unpublished changes</Badge> : <Badge tone="brand">Published</Badge>}>
+        <CardTitle sub="People rates come from your rate card; model, cloud and tool rates are illustrative until replaced. Record the source and effective date of contracted rates." action={dirty ? <Badge tone="warn">Unpublished changes</Badge> : <Badge tone="brand">Published</Badge>}>
           Rate card version
         </CardTitle>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -99,6 +107,100 @@ export default function SettingsPage() {
       </Card>
 
       <fieldset disabled={ro} className="min-w-0 space-y-4">
+        <Collapsible
+          title="People rate card"
+          sub={`Designations with standard hourly rack rate (list price) and cost, in ${draft.resourceCurrency}. Used for implementation activities and the AgentOps team.`}
+          defaultOpen
+          badge={<Badge tone="brand">{draft.resourceRates.length} designations</Badge>}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <SelectField<CurrencyCode>
+              label="Rate currency"
+              value={draft.resourceCurrency}
+              onChange={(v) => up((r) => ({ ...r, resourceCurrency: v }))}
+              options={CURRENCIES.map((c) => ({ value: c.code, label: `${c.code} — ${c.label}` }))}
+            />
+            <FieldShell label="Last rate update">
+              <input
+                type="date"
+                disabled={ro}
+                className="h-9 w-full rounded-lg border border-line px-3 text-sm"
+                value={draft.resourceRatesUpdated}
+                onChange={(e) => up((r) => ({ ...r, resourceRatesUpdated: e.target.value }))}
+              />
+            </FieldShell>
+            <TextField label="Rate source" value={draft.resourceRatesSource} onChange={(v) => up((r) => ({ ...r, resourceRatesSource: v }))} />
+            <NumberField
+              label="Default discount for new estimates"
+              tip="Discount off rack rate that new estimates start with. Each estimate can change it in step 3."
+              value={draft.defaultDiscountPct}
+              onChange={(v) => num((r) => (r.defaultDiscountPct = Math.min(100, Math.max(0, v ?? 0))))}
+              min={0}
+              max={100}
+              suffix="%"
+            />
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[860px]">
+              <thead>
+                <tr>
+                  <Th>Member firm</Th>
+                  <Th>Designation</Th>
+                  <Th right>Rack rate / hour</Th>
+                  <Th right>Cost / hour</Th>
+                  <Th right>Margin at rack</Th>
+                  <Th right>Used by</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {draft.resourceRates.map((rr, i) => {
+                  const uses = draft.implActivities.filter((a) => a.roleId === rr.id).length + draft.agentOpsTeam.filter((t) => t.resourceId === rr.id).length;
+                  const mPct = rr.rackRatePerHour > 0 ? (1 - rr.costRatePerHour / rr.rackRatePerHour) * 100 : null;
+                  return (
+                    <tr key={rr.id}>
+                      <Td className="w-44"><TextInput value={rr.memberFirm} onChange={(v) => num((r) => (r.resourceRates[i].memberFirm = v))} /></Td>
+                      <Td className="w-60"><TextInput value={rr.designation} onChange={(v) => num((r) => (r.resourceRates[i].designation = v))} /></Td>
+                      <Td className="w-40"><NumberInput value={rr.rackRatePerHour} onChange={(v) => num((r) => (r.resourceRates[i].rackRatePerHour = v ?? 0))} min={0} ariaLabel={`${rr.memberFirm} ${rr.designation} rack rate`} /></Td>
+                      <Td className="w-40"><NumberInput value={rr.costRatePerHour} onChange={(v) => num((r) => (r.resourceRates[i].costRatePerHour = v ?? 0))} min={0} ariaLabel={`${rr.memberFirm} ${rr.designation} cost rate`} /></Td>
+                      <Td right className={mPct != null && mPct < 0 ? 'text-bad' : 'text-muted'}>{mPct == null ? '—' : `${mPct.toFixed(1)}%`}</Td>
+                      <Td right className="text-muted">{uses ? `${uses} template row${uses > 1 ? 's' : ''}` : '—'}</Td>
+                      <Td right className="w-12">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={ro || uses > 0}
+                          title={uses > 0 ? 'Used by implementation activities or the AgentOps team — reassign those first' : 'Remove designation'}
+                          onClick={() => up((r) => ({ ...r, resourceRates: r.resourceRates.filter((_, j) => j !== i) }))}
+                        >
+                          <Trash2 size={13} />
+                        </Button>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              disabled={ro}
+              onClick={() =>
+                up((r) => ({
+                  ...r,
+                  resourceRates: [...r.resourceRates, { id: `res-${Date.now().toString(36)}`, memberFirm: 'Implement', designation: 'New designation', rackRatePerHour: 0, costRatePerHour: 0 }],
+                }))
+              }
+            >
+              <Plus size={13} /> Add designation
+            </Button>
+            <span className="text-xs text-muted">
+              Fee at a discount = hours × rack rate × (1 − discount). Renaming a designation keeps it linked to the estimates that use it. Publish a new version to apply changes.
+            </span>
+          </div>
+        </Collapsible>
+
         <Collapsible title="LLM provider and model rates" sub="USD per 1M tokens. Cached = cache-read rate. Mark rates as contracted once replaced." defaultOpen badge={<Badge>{draft.models.length} models</Badge>}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1000px]">
@@ -175,25 +277,31 @@ export default function SettingsPage() {
           </div>
         </Collapsible>
 
-        <Collapsible title="AgentOps rates and SLA multipliers" sub="USD per month, before SLA multiplier and delivery cost index">
-          <table className="w-full max-w-3xl">
-            <thead>
-              <tr>
-                <Th>Component</Th>
-                <Th right>Base / month</Th>
-                <Th right>Per agent / month</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft.agentOps.map((c, i) => (
-                <tr key={c.id}>
-                  <Td>{c.label}</Td>
-                  <Td className="w-40"><NumberInput value={c.basePerMonth} onChange={(v) => num((r) => (r.agentOps[i].basePerMonth = v ?? 0))} min={0} ariaLabel={`${c.label} base`} /></Td>
-                  <Td className="w-40"><NumberInput value={c.perAgentPerMonth} onChange={(v) => num((r) => (r.agentOps[i].perAgentPerMonth = v ?? 0))} min={0} ariaLabel={`${c.label} per agent`} /></Td>
+        <Collapsible title="AgentOps team and SLA multipliers" sub="Monthly hours per role, staffed from the people rate card: hours = (base + per agent × agents) × SLA multiplier">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] max-w-4xl">
+              <thead>
+                <tr>
+                  <Th>Role</Th>
+                  <Th>Designation</Th>
+                  <Th right>Base hours / month</Th>
+                  <Th right>Hours per agent / month</Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {draft.agentOpsTeam.map((t, i) => (
+                  <tr key={t.id}>
+                    <Td>{t.label}</Td>
+                    <Td className="w-72">
+                      <Select value={t.resourceId} onChange={(v) => num((r) => (r.agentOpsTeam[i].resourceId = v))} groups={designationGroups} ariaLabel={`${t.label} designation`} />
+                    </Td>
+                    <Td className="w-40"><NumberInput value={t.baseHoursPerMonth} onChange={(v) => num((r) => (r.agentOpsTeam[i].baseHoursPerMonth = v ?? 0))} min={0} ariaLabel={`${t.label} base hours`} /></Td>
+                    <Td className="w-40"><NumberInput value={t.hoursPerAgentPerMonth} onChange={(v) => num((r) => (r.agentOpsTeam[i].hoursPerAgentPerMonth = v ?? 0))} min={0} ariaLabel={`${t.label} hours per agent`} /></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="mt-4 grid grid-cols-1 max-w-3xl gap-4 sm:grid-cols-3">
             {(['standard', 'enhanced', 'premium'] as SlaKey[]).map((k) => (
               <NumberField key={k} label={`SLA multiplier — ${k}`} value={draft.slaMultipliers[k]} onChange={(v) => num((r) => (r.slaMultipliers[k] = v ?? 1))} min={0} />
@@ -201,28 +309,13 @@ export default function SettingsPage() {
           </div>
         </Collapsible>
 
-        <Collapsible title="Implementation resource rates and effort" sub="USD delivery cost per hour; base hours are for one agent at medium complexity">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <Th>Role</Th>
-                  <Th right>Rate / hour</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {draft.implRoles.map((ro_, i) => (
-                  <tr key={ro_.id}>
-                    <Td>{ro_.label}</Td>
-                    <Td className="w-36"><NumberInput value={ro_.ratePerHour} onChange={(v) => num((r) => (r.implRoles[i].ratePerHour = v ?? 0))} min={0} ariaLabel={`${ro_.label} rate`} /></Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <table className="w-full">
+        <Collapsible title="Implementation activities and effort" sub="Template hours for one agent at medium complexity, each staffed from a designation on the people rate card">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] max-w-4xl">
               <thead>
                 <tr>
                   <Th>Activity</Th>
+                  <Th>Designation</Th>
                   <Th right>Base hours</Th>
                 </tr>
               </thead>
@@ -230,6 +323,9 @@ export default function SettingsPage() {
                 {draft.implActivities.map((a, i) => (
                   <tr key={a.id}>
                     <Td>{a.label}</Td>
+                    <Td className="w-72">
+                      <Select value={a.roleId} onChange={(v) => num((r) => (r.implActivities[i].roleId = v))} groups={designationGroups} ariaLabel={`${a.label} designation`} />
+                    </Td>
                     <Td className="w-32"><NumberInput value={a.baseHours} onChange={(v) => num((r) => (r.implActivities[i].baseHours = v ?? 0))} min={0} ariaLabel={`${a.label} hours`} /></Td>
                   </tr>
                 ))}
@@ -244,7 +340,7 @@ export default function SettingsPage() {
           </div>
         </Collapsible>
 
-        <Collapsible title="Currency conversion and delivery cost index" sub="Units of each currency per 1 USD. The delivery index scales provider labour (implementation, AgentOps) by market.">
+        <Collapsible title="Currency conversion" sub="Units of each currency per 1 USD. Converts vendor rates (USD) and people rates into the estimate currency.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <TextField label="FX source" value={draft.fxSource} onChange={(v) => up((r) => ({ ...r, fxSource: v }))} className="sm:col-span-2" />
             <FieldShell label="FX effective date">
@@ -256,7 +352,6 @@ export default function SettingsPage() {
               <tr>
                 <Th>Currency</Th>
                 <Th right>Per 1 USD</Th>
-                <Th right>Delivery cost index</Th>
               </tr>
             </thead>
             <tbody>
@@ -266,7 +361,6 @@ export default function SettingsPage() {
                     {c.code} — {c.label}
                   </Td>
                   <Td className="w-36"><NumberInput value={draft.fx[c.code]} onChange={(v) => num((r) => (r.fx[c.code] = c.code === 'USD' ? 1 : v ?? 1))} min={0} disabled={c.code === 'USD'} ariaLabel={`${c.code} FX`} /></Td>
-                  <Td className="w-36"><NumberInput value={draft.deliveryCostIndex[c.code]} onChange={(v) => num((r) => (r.deliveryCostIndex[c.code] = v ?? 1))} min={0} ariaLabel={`${c.code} index`} /></Td>
                 </tr>
               ))}
             </tbody>

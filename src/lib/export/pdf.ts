@@ -197,7 +197,14 @@ function headline(r: Report) {
   const { res, cur } = r;
   const sel = res.selected;
   r.kpis([
-    { label: 'Implementation price', value: m(res.implementation.price, cur), sub: `Delivery cost ${m(res.implementation.deliveryCost, cur)}` },
+    {
+      label: 'Implementation price',
+      value: m(res.implementation.price, cur),
+      sub:
+        res.implementation.pricingBasis === 'discount'
+          ? `Rack ${m(res.implementation.rackFee ?? 0, cur)} less ${pf(res.implementation.discountPct)}`
+          : `Delivery cost ${m(res.implementation.deliveryCost, cur)}`,
+    },
     { label: 'Monthly operating cost', value: m(res.operating.total, cur), sub: `${m(res.operating.annual, cur)} per year` },
     { label: 'Cost per successful ABU', value: up(res.abu.costPerAbuFullyLoaded, cur), sub: 'Fully loaded incl. failures & retries' },
     { label: 'Recommended ABU / ACU price', value: `${up(res.abu.price, cur)} / ${up(res.acu.price, cur)}`, sub: res.agentOpsBilling === 'separate' ? 'AgentOps billed separately' : 'AgentOps bundled' },
@@ -243,17 +250,20 @@ function costs(r: Report, full: boolean) {
   r.h('One-time implementation', 'ESTIMATES');
   if (full && res.implementation.mode === 'detailed') {
     r.table(
-      ['Activity', 'Role', 'Hours', 'Rate / hour', 'Cost'],
-      res.implementation.activities.map((a) => [a.label, a.role, nf(a.hours), m(a.rate, cur), m(a.cost, cur)]),
-      { right: [2, 3, 4], foot: [['Total', '', nf(res.implementation.hours), '', m(res.implementation.deliveryCost, cur)]] },
+      ['Activity', 'Designation', 'Hours', 'Cost / hour', 'Cost', 'Rack fee'],
+      res.implementation.activities.map((a) => [a.label, a.role, nf(a.hours), m(a.rate, cur), m(a.cost, cur), m(a.rackFee, cur)]),
+      { right: [2, 3, 4, 5], foot: [['Total', '', nf(res.implementation.hours), '', m(res.implementation.deliveryCost, cur), m(res.implementation.rackFee ?? 0, cur)]], fontSize: 8 },
     );
   }
+  const im = res.implementation;
   r.table(
     ['Implementation', 'Amount'],
     [
-      ['Delivery cost' + (res.implementation.mode === 'simple' ? ' (simple estimate)' : ' (effort x rate)'), m(res.implementation.deliveryCost, cur)],
-      ['Target implementation margin', pf(res.implementation.marginPct)],
-      ['Implementation selling price', m(res.implementation.price, cur)],
+      ['Delivery cost' + (im.mode === 'simple' ? ' (simple estimate)' : ' (hours x cost rate)'), m(im.deliveryCost, cur)],
+      ...(im.rackFee != null ? [['Fee at rack rates (hours x rack rate)', m(im.rackFee, cur)]] : []),
+      im.pricingBasis === 'discount' ? ['Discount off rack rate', pf(im.discountPct)] : ['Target implementation margin', pf(im.marginPct)],
+      ['Implementation selling price', m(im.price, cur)],
+      ['Implementation margin earned', pf(im.actualMarginPct)],
     ],
   );
   r.h('Monthly AI operating cost', 'ESTIMATES');
@@ -282,14 +292,20 @@ function costs(r: Report, full: boolean) {
   if (full) {
     r.h('AgentOps', 'ESTIMATES');
     r.table(
-      ['Component', 'Monthly cost'],
-      op.agentOpsComponents.map((c) => [c.label, m(c.monthly, cur)]),
-      { foot: [[op.agentOpsOverridden ? 'Total (manual override)' : 'Total', m(op.pools.agentops, cur)]] },
+      ['Role', 'Designation', 'Hours / month', 'Cost / month', 'Rack fee / month'],
+      op.agentOpsComponents.map((c) => [c.label, c.designation, nf(c.hours), m(c.monthly, cur), m(c.rackMonthly, cur)]),
+      { right: [2, 3, 4], foot: [[op.agentOpsOverridden ? 'Total (manual override)' : 'Total', '', '', m(op.pools.agentops, cur), op.agentOpsRackFee != null ? m(op.agentOpsRackFee, cur) : '-']], fontSize: 8 },
     );
+    const basis =
+      res.agentOpsFeeBasis === 'discount'
+        ? `team at rack rates less a ${pf(res.implementation.discountPct)} discount`
+        : res.agentOpsFeeBasis === 'override'
+          ? 'customer-specific fee'
+          : 'team cost at the target margin';
     r.para(
       res.agentOpsBilling === 'separate'
-        ? `AgentOps is billed as a separate fee of ${m(res.agentOpsFee, cur)} per month and excluded from ABU and ACU prices, so it is recovered once.`
-        : 'AgentOps is bundled into ABU and ACU prices; no separate fee is charged.',
+        ? `AgentOps is billed as a separate fee of ${m(res.agentOpsFee, cur)} per month (${basis}) and excluded from ABU and ACU prices, so it is recovered once.`
+        : 'AgentOps is bundled into ABU and ACU prices at the target margin; no separate fee is charged.',
       { size: 8.5 },
     );
   }

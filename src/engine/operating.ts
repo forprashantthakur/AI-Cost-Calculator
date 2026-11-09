@@ -19,8 +19,21 @@ import { COMPLEXITIES, COST_POOLS } from './types';
 /** Units of the estimate currency per 1 USD. */
 export const fxRate = (rc: RateCard, currency: EstimateInputs['currency']): Dec => d(rc.fx[currency] ?? 1);
 
-/** Local delivery cost index for provider labour (implementation, AgentOps). */
-export const deliveryIndex = (rc: RateCard, currency: EstimateInputs['currency']): Dec => d(rc.deliveryCostIndex?.[currency] ?? 1);
+/** Converts people rates from the rate card's resource currency into the estimate currency. */
+export const resourceFx = (rc: RateCard, currency: EstimateInputs['currency']): Dec =>
+  d(rc.fx[currency] ?? 1).div(d(rc.fx[rc.resourceCurrency] ?? 1));
+
+/** A designation from the people rate card, or undefined. */
+export const findResource = (rc: RateCard, id: string) => rc.resourceRates.find((r) => r.id === id);
+
+/** "Implement · Manager" style label for a designation id. */
+export const resourceLabel = (rc: RateCard, id: string) => {
+  const r = findResource(rc, id);
+  return r ? `${r.memberFirm} · ${r.designation}` : id;
+};
+
+/** Discount off rack rate as a fraction 0–1. */
+export const discountFraction = (inp: EstimateInputs): Dec => clamp(pct(inp.discountPct ?? 0), 0, 1);
 
 /** Convert an amount between currencies through USD. */
 export const convert = (rc: RateCard, amount: number, from: EstimateInputs['currency'], to: EstimateInputs['currency']): Dec =>
@@ -123,9 +136,11 @@ export interface OperatingCalc {
   lines: { key: string; label: string; pool: CostPool; monthly: Dec; quantity: Dec | null; unit: string; rate: Dec | null; per: number; note: string }[];
   pools: Record<CostPool, Dec>;
   llm: { input: Dec; cached: Dec; output: Dec; total: Dec };
-  agentOps: { id: string; label: string; monthly: Dec }[];
+  agentOps: { id: string; label: string; designation: string; hours: Dec; costRate: Dec; rackRate: Dec; monthly: Dec; rackMonthly: Dec }[];
   agentOpsTotal: Dec;
   agentOpsOverridden: boolean;
+  /** AgentOps team at rack rates per month; null when the cost is overridden. */
+  agentOpsRack: Dec | null;
   total: Dec;
   failureCost: Dec;
 }
@@ -184,16 +199,31 @@ export function computeOperating(inp: EstimateInputs, rc: RateCard, vol = comput
   const other = D.max(0, d(inp.otherMonthly));
 
   /* ---- AgentOps -------------------------------------------------------- */
+  // AgentOps team: hours per role (base + per agent) × SLA multiplier, costed
+  // at each designation's cost rate. Rack rates give the list-price fee.
   const slaMult = d(rc.slaMultipliers[inp.sla] ?? 1);
-  const laborIdx = deliveryIndex(rc, inp.currency);
-  const agentOps = rc.agentOps.map((c) => ({
-    id: c.id,
-    label: c.label,
-    monthly: usd(c.basePerMonth).plus(usd(c.perAgentPerMonth).times(agents)).times(slaMult).times(laborIdx),
-  }));
+  const resFx = resourceFx(rc, inp.currency);
+  const agentOps = rc.agentOpsTeam.map((t) => {
+    const res = findResource(rc, t.resourceId);
+    const hours = D.max(0, d(t.baseHoursPerMonth).plus(d(t.hoursPerAgentPerMonth).times(agents)).times(slaMult));
+    const costRate = d(res?.costRatePerHour ?? 0).times(resFx);
+    const rackRate = d(res?.rackRatePerHour ?? 0).times(resFx);
+    return {
+      id: t.id,
+      label: t.label,
+      designation: resourceLabel(rc, t.resourceId),
+      hours,
+      costRate,
+      rackRate,
+      monthly: hours.times(costRate),
+      rackMonthly: hours.times(rackRate),
+    };
+  });
   const agentOpsComputed = sum(...agentOps.map((a) => a.monthly));
+  const agentOpsHours = sum(...agentOps.map((a) => a.hours));
   const agentOpsOverridden = inp.agentOpsOverride != null;
   const agentOpsTotal = agentOpsOverridden ? D.max(0, d(inp.agentOpsOverride)) : agentOpsComputed;
+  const agentOpsRack = agentOpsOverridden ? null : sum(...agentOps.map((a) => a.rackMonthly));
 
   /* ---- Human review (provider-side human-in-the-loop) ------------------ */
   const reviewed = unique.times(clamp(pct(inp.humanReviewRatePct), 0, 1));
@@ -226,7 +256,7 @@ export function computeOperating(inp: EstimateInputs, rc: RateCard, vol = comput
     L('observability', 'Monitoring & observability tooling', 'platform', observability, null, '', null, 1, 'Tooling only — monitoring staff effort sits in AgentOps'),
     L('evaluation', 'AI quality / evaluation runs', 'platform', evaluation, null, '', null, 1, 'Eval compute and golden-set runs'),
     ...(inp.sdlc ? [L('cicd', 'CI/CD and development environments', 'platform', cicd, null, '', null, 1)] : []),
-    L('agentops', 'AgentOps services', 'agentops', agentOpsTotal, null, '', null, 1, agentOpsOverridden ? 'Manual override' : `${inp.sla} SLA × delivery cost index ${laborIdx.toString()}`),
+    L('agentops', 'AgentOps services', 'agentops', agentOpsTotal, agentOpsOverridden ? null : agentOpsHours, 'team hours', null, 1, agentOpsOverridden ? 'Manual override' : `Operate team at rate-card cost rates, ${inp.sla} SLA`),
     L('human-review', 'Human-in-the-loop review', 'service', humanReview, reviewHours, 'review hours', rReview, 1),
     L('other', 'Other attributable costs', 'service', other, null, '', null, 1),
   ];
@@ -255,6 +285,7 @@ export function computeOperating(inp: EstimateInputs, rc: RateCard, vol = comput
     agentOps,
     agentOpsTotal,
     agentOpsOverridden,
+    agentOpsRack,
     total,
     failureCost,
   };
@@ -280,8 +311,18 @@ export function operatingResult(op: OperatingCalc, inp: EstimateInputs): Operati
     annual: n0(op.total.times(12)),
     perSubmittedTxn: n(div(op.total, op.vol.V)),
     perAgent: n(div(op.total, inp.agents)),
-    agentOpsComponents: op.agentOps.map((a) => ({ id: a.id, label: a.label, monthly: n0(a.monthly) })),
+    agentOpsComponents: op.agentOps.map((a) => ({
+      id: a.id,
+      label: a.label,
+      designation: a.designation,
+      hours: n0(a.hours),
+      costRate: n0(a.costRate),
+      rackRate: n0(a.rackRate),
+      monthly: n0(a.monthly),
+      rackMonthly: n0(a.rackMonthly),
+    })),
     agentOpsOverridden: op.agentOpsOverridden,
+    agentOpsRackFee: op.agentOpsRack ? n0(op.agentOpsRack) : null,
     failureAndRetryCost: n0(op.failureCost),
   };
 }
@@ -306,28 +347,62 @@ export interface ImplementationCalc {
   cost: Dec;
   price: Dec;
   hours: Dec;
-  activities: { id: string; label: string; role: string; hours: Dec; rate: Dec; cost: Dec }[];
+  /** Hours × rack rate before discount; null in simple mode. */
+  rack: Dec | null;
+  basis: 'discount' | 'margin';
+  activities: { id: string; label: string; role: string; hours: Dec; rate: Dec; cost: Dec; rackRate: Dec; rackFee: Dec }[];
 }
 
+/**
+ * One-time implementation. Delivery cost = hours × designation cost rate.
+ * Selling price, by the estimate's people-pricing basis:
+ *   discount: hours × rack rate × (1 − discount)
+ *   margin:   delivery cost ÷ (1 − target implementation margin)
+ * Simple mode has no rack fee, so it always prices on margin.
+ */
 export function computeImplementation(inp: EstimateInputs, rc: RateCard): ImplementationCalc {
-  const fx = fxRate(rc, inp.currency).times(deliveryIndex(rc, inp.currency));
+  const fx = resourceFx(rc, inp.currency);
   const activities = inp.implActivities.map((a) => {
-    const role = rc.implRoles.find((r) => r.id === a.roleId);
-    const rate = d(role?.ratePerHour ?? 0).times(fx);
+    const res = findResource(rc, a.roleId);
+    const rate = d(res?.costRatePerHour ?? 0).times(fx);
+    const rackRate = d(res?.rackRatePerHour ?? 0).times(fx);
     const hours = D.max(0, d(a.hours));
-    return { id: a.id, label: a.label, role: role?.label ?? a.roleId, hours, rate, cost: hours.times(rate) };
+    return { id: a.id, label: a.label, role: resourceLabel(rc, a.roleId), hours, rate, cost: hours.times(rate), rackRate, rackFee: hours.times(rackRate) };
   });
+  const simple = inp.implMode === 'simple';
   const detailedCost = sum(...activities.map((a) => a.cost));
   const hours = sum(...activities.map((a) => a.hours));
-  const cost = inp.implMode === 'simple' ? D.max(0, d(inp.implSimpleCost)) : detailedCost;
-  return { cost, price: priceFromMargin(cost, inp.implMarginPct), hours, activities };
+  const cost = simple ? D.max(0, d(inp.implSimpleCost)) : detailedCost;
+  const rack = simple ? null : sum(...activities.map((a) => a.rackFee));
+  const basis = inp.peoplePricing === 'discount' && rack != null ? 'discount' : 'margin';
+  const price = basis === 'discount' && rack ? rack.times(ONE.minus(discountFraction(inp))) : priceFromMargin(cost, inp.implMarginPct);
+  return { cost, price, hours, rack, basis, activities };
 }
 
-export const implementationResult = (impl: ImplementationCalc, inp: EstimateInputs): ImplementationResult => ({
-  mode: inp.implMode,
-  activities: impl.activities.map((a) => ({ id: a.id, label: a.label, role: a.role, hours: n0(a.hours), rate: n0(a.rate), cost: n0(a.cost) })),
-  hours: n0(impl.hours),
-  deliveryCost: n0(impl.cost),
-  marginPct: inp.implMarginPct,
-  price: n0(impl.price),
-});
+export const implementationResult = (impl: ImplementationCalc, inp: EstimateInputs): ImplementationResult => {
+  const rackPos = impl.rack && impl.rack.gt(0) ? impl.rack : null;
+  const atTarget = priceFromMargin(impl.cost, inp.implMarginPct);
+  return {
+    mode: inp.implMode,
+    activities: impl.activities.map((a) => ({
+      id: a.id,
+      label: a.label,
+      role: a.role,
+      hours: n0(a.hours),
+      rate: n0(a.rate),
+      cost: n0(a.cost),
+      rackRate: n0(a.rackRate),
+      rackFee: n0(a.rackFee),
+    })),
+    hours: n0(impl.hours),
+    deliveryCost: n0(impl.cost),
+    marginPct: inp.implMarginPct,
+    pricingBasis: impl.basis,
+    rackFee: impl.rack ? n0(impl.rack) : null,
+    discountPct: inp.discountPct ?? 0,
+    effectiveDiscountPct: rackPos ? n0(ONE.minus(impl.price.div(rackPos)).times(100), 6) : null,
+    actualMarginPct: impl.price.gt(0) ? n0(impl.price.minus(impl.cost).div(impl.price).times(100), 6) : 0,
+    discountAtTargetMargin: rackPos ? n0(ONE.minus(atTarget.div(rackPos)).times(100), 6) : null,
+    price: n0(impl.price),
+  };
+};

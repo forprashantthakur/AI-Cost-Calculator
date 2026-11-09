@@ -1,4 +1,4 @@
-import { D, d, div, n, n0, pct, sum, ZERO, ONE, priceFromMargin, type Dec } from './decimal';
+import { D, d, div, n, n0, pct, sum, clamp, ZERO, ONE, priceFromMargin, type Dec } from './decimal';
 import { getProcess } from '@/data/catalog';
 import {
   computeImplementation,
@@ -133,6 +133,7 @@ export function computeEstimate(raw: EstimateInputs, rc: RateCard): EstimateResu
     },
     agentOpsBilling: pb.agentOpsBilling,
     agentOpsFee: n0(pb.agentOpsFee),
+    agentOpsFeeBasis: pb.agentOpsFeeBasis,
     recommendation: rec,
     models,
     selectedModel,
@@ -186,6 +187,15 @@ function reconcile(
   if (x.pb.agentOpsBilling === 'separate' && x.pb.abuPrice && !r.abu.priceOverridden && x.vol.weightedAbus.gt(0)) {
     const expected = priceFromMargin(x.op.total.minus(x.op.pools.agentops), x.pb.margin).div(x.vol.weightedAbus);
     add('agentops-excluded', 'AgentOps billed separately is excluded from the ABU price', close(expected, x.pb.abuPrice), 'Prevents recovering AgentOps twice');
+  }
+  if (x.impl.basis === 'discount' && x.impl.rack) {
+    const disc = clamp(pct(r.implementation.discountPct), 0, 1);
+    add('impl-discount', 'Implementation price = rack-rate fee × (1 − discount)', close(x.impl.rack.times(ONE.minus(disc)), x.impl.price), 'Hours × rack rate, less the discount');
+  }
+  if (!x.op.agentOpsOverridden) {
+    add('agentops-team', 'AgentOps team roles add up to the AgentOps cost', close(sum(...x.op.agentOps.map((a) => a.monthly)), x.op.pools.agentops), 'Hours × designation cost rate');
+    if (x.pb.agentOpsFeeBasis === 'discount' && x.op.agentOpsRack)
+      add('agentops-discount', 'AgentOps fee = team at rack rate × (1 − discount)', close(x.op.agentOpsRack.times(ONE.minus(clamp(pct(r.implementation.discountPct), 0, 1))), x.pb.agentOpsFee), 'Hours × rack rate, less the discount');
   }
   const inv = r.implementation.price + r.value.annualClientCharges;
   add('roi-investment', 'ROI investment = implementation price + year-1 client charges', close(inv, r.value.year1Investment), '');

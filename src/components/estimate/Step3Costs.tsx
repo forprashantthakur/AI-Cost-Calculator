@@ -1,14 +1,14 @@
 'use client';
 
-import { RotateCcw } from 'lucide-react';
+import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useStore } from '@/store/store';
 import { getProcess } from '@/data/catalog';
 import { defaultActivities, implCostFromActivities } from '@/data/templates';
-import type { AgentOpsBilling, EstimateInputs, EstimateResults } from '@/engine/types';
-import { currencyMeta, money, moneyCompact, num, numCompact, pctFmt } from '@/lib/format';
+import type { AgentOpsBilling, EstimateInputs, EstimateResults, PeoplePricing } from '@/engine/types';
+import { currencyMeta, dateLabel, money, moneyCompact, num, numCompact, pctFmt } from '@/lib/format';
 import { TIPS } from '@/lib/tips';
 import { CostLinesBar, PoolDonut, POOL_META } from '@/components/charts';
-import { Button, Callout, Card, CardTitle, NumberField, NumberInput, Segmented, Select, Stat, Td, Th } from '@/components/ui';
+import { Button, Callout, Card, CardTitle, NumberField, NumberInput, Segmented, Select, Stat, Td, TextInput, Th } from '@/components/ui';
 
 type Up = (fn: (e: EstimateInputs) => EstimateInputs) => void;
 
@@ -18,6 +18,11 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
   const sym = currencyMeta(cur).symbol.trim();
   const impl = res.implementation;
   const op = res.operating;
+  const aoMargin = res.agentOpsFee > 0 ? ((res.agentOpsFee - op.pools.agentops) / res.agentOpsFee) * 100 : null;
+  const designationGroups = Array.from(new Set(rc.resourceRates.map((r) => r.memberFirm))).map((firm) => ({
+    label: firm,
+    options: rc.resourceRates.filter((r) => r.memberFirm === firm).map((r) => ({ value: r.id, label: `${r.memberFirm} · ${r.designation}` })),
+  }));
 
   return (
     <div className="space-y-5">
@@ -25,7 +30,7 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
       <Card>
         <CardTitle
           tip={TIPS.implementationPrice}
-          sub="Discovery, architecture, build, prompt & context engineering, RAG, integration, security, testing, deployment and change."
+          sub={`People effort costed at the rate card: ${rc.resourceRatesSource}, rates updated ${dateLabel(rc.resourceRatesUpdated)}. Edit rates in Settings › People rate card.`}
           action={
             <Segmented
               size="sm"
@@ -38,69 +43,92 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
             />
           }
         >
-          A. One-time implementation cost
+          A. One-time implementation
         </CardTitle>
         {est.implMode === 'simple' ? (
           <div className="grid grid-cols-1 max-w-2xl gap-4 sm:grid-cols-2">
             <NumberField label="Estimated implementation delivery cost" value={est.implSimpleCost} onChange={(v) => update((e) => ({ ...e, implSimpleCost: v ?? 0 }))} min={0} prefix={sym} />
-            <NumberField label="Target implementation margin" value={est.implMarginPct} onChange={(v) => update((e) => ({ ...e, implMarginPct: v ?? 0 }))} min={0} max={95} suffix="%" />
           </div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[920px]">
                 <thead>
                   <tr>
                     <Th>Activity</Th>
-                    <Th>Role</Th>
+                    <Th>Designation</Th>
                     <Th right>Hours</Th>
-                    <Th right>Rate / hour</Th>
+                    <Th right>Cost / hour</Th>
+                    <Th right>Rack / hour</Th>
                     <Th right>Cost</Th>
+                    <Th right>Rack fee</Th>
+                    <Th />
                   </tr>
                 </thead>
                 <tbody>
                   {est.implActivities.map((a, i) => {
                     const r = impl.activities[i];
+                    const setAct = (patch: Partial<typeof a>) => update((e) => ({ ...e, implActivities: e.implActivities.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
                     return (
                       <tr key={a.id}>
-                        <Td className="text-ink">{a.label}</Td>
-                        <Td>
-                          <Select
-                            value={a.roleId}
-                            onChange={(v) => update((e) => ({ ...e, implActivities: e.implActivities.map((x, j) => (j === i ? { ...x, roleId: v } : x)) }))}
-                            options={rc.implRoles.map((ro) => ({ value: ro.id, label: ro.label }))}
-                            ariaLabel={`Role for ${a.label}`}
-                          />
+                        <Td className="min-w-[220px] text-ink">
+                          {a.id.startsWith('custom-') ? <TextInput value={a.label} onChange={(v) => setAct({ label: v })} placeholder="Activity name" /> : a.label}
+                        </Td>
+                        <Td className="min-w-[270px]">
+                          <Select value={a.roleId} onChange={(v) => setAct({ roleId: v })} groups={designationGroups} ariaLabel={`Designation for ${a.label}`} />
                         </Td>
                         <Td right className="w-28">
-                          <NumberInput
-                            value={a.hours}
-                            min={0}
-                            ariaLabel={`Hours for ${a.label}`}
-                            onChange={(v) => update((e) => ({ ...e, implActivities: e.implActivities.map((x, j) => (j === i ? { ...x, hours: v ?? 0 } : x)) }))}
-                          />
+                          <NumberInput value={a.hours} min={0} ariaLabel={`Hours for ${a.label}`} onChange={(v) => setAct({ hours: v ?? 0 })} />
                         </Td>
-                        <Td right>{money(r?.rate, cur)}</Td>
-                        <Td right>{money(r?.cost, cur)}</Td>
+                        <Td right className="text-muted">{money(r?.rate, cur, 0)}</Td>
+                        <Td right className="text-muted">{money(r?.rackRate, cur, 0)}</Td>
+                        <Td right>{money(r?.cost, cur, 0)}</Td>
+                        <Td right>{money(r?.rackFee, cur, 0)}</Td>
+                        <Td right className="w-10">
+                          <button
+                            type="button"
+                            className="rounded p-1 text-faint hover:bg-line-2 hover:text-bad"
+                            title="Remove activity"
+                            aria-label={`Remove ${a.label}`}
+                            onClick={() => update((e) => ({ ...e, implActivities: e.implActivities.filter((_, j) => j !== i) }))}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </Td>
                       </tr>
                     );
                   })}
-                  <tr>
+                  <tr className="bg-canvas">
                     <Td strong>Total</Td>
                     <Td />
                     <Td right strong>
                       {num(impl.hours)}
                     </Td>
                     <Td />
+                    <Td />
                     <Td right strong>
-                      {money(impl.deliveryCost, cur)}
+                      {money(impl.deliveryCost, cur, 0)}
                     </Td>
+                    <Td right strong>
+                      {money(impl.rackFee, cur, 0)}
+                    </Td>
+                    <Td />
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div className="mt-4 flex flex-wrap items-end gap-4">
-              <NumberField className="w-56" label="Target implementation margin" value={est.implMarginPct} onChange={(v) => update((e) => ({ ...e, implMarginPct: v ?? 0 }))} min={0} max={95} suffix="%" />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() =>
+                  update((e) => ({
+                    ...e,
+                    implActivities: [...e.implActivities, { id: `custom-${Date.now().toString(36)}`, label: 'Additional activity', roleId: rc.resourceRates[0]?.id ?? '', hours: 0 }],
+                  }))
+                }
+              >
+                <Plus size={13} /> Add activity
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -116,10 +144,62 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
             </div>
           </>
         )}
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Stat label="Implementation delivery cost" value={moneyCompact(impl.deliveryCost, cur)} sub={money(impl.deliveryCost, cur)} />
-          <Stat label="Implementation margin" value={pctFmt(impl.marginPct, 1)} />
-          <Stat label="Implementation selling price" value={moneyCompact(impl.price, cur)} sub={money(impl.price, cur)} tip={TIPS.implementationPrice} emphasis />
+
+        <div className="mt-6 grid grid-cols-1 gap-5 border-t border-line pt-5 lg:grid-cols-[minmax(0,320px)_1fr]">
+          <div className="space-y-4">
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-ink-2">Price people effort by</div>
+              <Segmented<PeoplePricing>
+                size="sm"
+                value={est.peoplePricing}
+                onChange={(v) => update((e) => ({ ...e, peoplePricing: v }))}
+                options={[
+                  { value: 'discount', label: 'Rack rate less discount' },
+                  { value: 'margin', label: 'Target margin' },
+                ]}
+              />
+              <p className="mt-1.5 text-[11px] text-faint">Applies to the implementation fee and the AgentOps team fee.</p>
+            </div>
+            {est.peoplePricing === 'discount' && (
+              <NumberField
+                label="Discount off rack rate"
+                tip="Fee = hours × rack rate × (1 − discount). The margin shown is what that fee earns over delivery cost."
+                value={est.discountPct}
+                onChange={(v) => update((e) => ({ ...e, discountPct: v ?? 0 }))}
+                min={0}
+                max={100}
+                suffix="%"
+              />
+            )}
+            <NumberField
+              label="Target implementation margin"
+              tip={est.peoplePricing === 'discount' ? 'Used to show the discount that would earn this margin.' : 'Price = delivery cost ÷ (1 − margin).'}
+              value={est.implMarginPct}
+              onChange={(v) => update((e) => ({ ...e, implMarginPct: v ?? 0 }))}
+              min={0}
+              max={95}
+              suffix="%"
+            />
+            {est.peoplePricing === 'discount' && impl.pricingBasis === 'margin' && (
+              <Callout tone="info">Simple mode has no rack-rate fee, so implementation is priced on target margin. Switch to Detailed to price at a discount.</Callout>
+            )}
+          </div>
+          <div className="grid grid-cols-1 content-start gap-3 sm:grid-cols-3">
+            <Stat label="Rack-rate fee" value={impl.rackFee != null ? moneyCompact(impl.rackFee, cur) : '—'} sub={impl.rackFee != null ? `${num(impl.hours)} hours at rack rates` : 'Detailed mode only'} />
+            <Stat
+              label="Discount"
+              value={impl.effectiveDiscountPct != null ? pctFmt(impl.effectiveDiscountPct, 1) : '—'}
+              sub={impl.rackFee != null ? `${moneyCompact(Math.max(0, impl.rackFee - impl.price), cur)} off rack` : undefined}
+            />
+            <Stat label="Implementation selling price" value={moneyCompact(impl.price, cur)} sub={money(impl.price, cur, 0)} tip={TIPS.implementationPrice} emphasis />
+            <Stat label="Implementation delivery cost" value={moneyCompact(impl.deliveryCost, cur)} sub={money(impl.deliveryCost, cur, 0)} />
+            <Stat label="Implementation margin" value={pctFmt(impl.actualMarginPct, 1)} tone={impl.actualMarginPct < 0 ? 'bad' : impl.actualMarginPct < est.implMarginPct ? 'warn' : 'good'} sub={impl.actualMarginPct < 0 ? 'Below delivery cost' : `Target ${pctFmt(est.implMarginPct, 0)}`} />
+            <Stat
+              label={`Discount for ${pctFmt(est.implMarginPct, 0)} margin`}
+              value={impl.discountAtTargetMargin != null ? pctFmt(impl.discountAtTargetMargin, 1) : '—'}
+              sub={impl.discountAtTargetMargin != null && impl.discountAtTargetMargin < 0 ? 'Premium over rack needed' : 'Maximum discount at target margin'}
+            />
+          </div>
         </div>
       </Card>
 
@@ -189,33 +269,48 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
 
       {/* C. AgentOps */}
       <Card>
-        <CardTitle tip={TIPS.agentOps} sub="AgentOps can be bundled into ABU/ACU prices or billed as a separate fee — never both.">
-          C. AgentOps cost
+        <CardTitle tip={TIPS.agentOps} sub="The AgentOps team is staffed from Operate designations: hours = (base + per agent × agents) × SLA multiplier. Bundled into ABU/ACU prices or billed as a separate fee — never both.">
+          C. AgentOps team
         </CardTitle>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <table className="w-full">
-            <thead>
-              <tr>
-                <Th>Component</Th>
-                <Th right>Monthly cost</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {op.agentOpsComponents.map((c) => (
-                <tr key={c.id}>
-                  <Td>{c.label}</Td>
-                  <Td right>{money(c.monthly, cur)}</Td>
+        <div className="space-y-5">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  <Th>Role</Th>
+                  <Th>Designation</Th>
+                  <Th right>Hours / month</Th>
+                  <Th right>Cost / month</Th>
+                  <Th right>Rack fee / month</Th>
                 </tr>
-              ))}
-              <tr className="bg-canvas">
-                <Td strong>{op.agentOpsOverridden ? 'Total (manual override applies)' : `Total — ${est.sla} SLA, ${est.agents} agent(s)`}</Td>
-                <Td right strong>
-                  {money(op.pools.agentops, cur)}
-                </Td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="space-y-4">
+              </thead>
+              <tbody>
+                {op.agentOpsComponents.map((c) => (
+                  <tr key={c.id}>
+                    <Td className="text-ink">{c.label}</Td>
+                    <Td className="text-muted">{c.designation}</Td>
+                    <Td right>{num(c.hours, 1)}</Td>
+                    <Td right>{money(c.monthly, cur, 0)}</Td>
+                    <Td right className="text-muted">{money(c.rackMonthly, cur, 0)}</Td>
+                  </tr>
+                ))}
+                <tr className="bg-canvas">
+                  <Td strong>{op.agentOpsOverridden ? 'Total (manual cost override applies)' : `Total — ${est.sla} SLA, ${est.agents} agent(s)`}</Td>
+                  <Td />
+                  <Td right strong>
+                    {num(op.agentOpsComponents.reduce((a, c) => a + c.hours, 0), 1)}
+                  </Td>
+                  <Td right strong>
+                    {money(op.pools.agentops, cur, 0)}
+                  </Td>
+                  <Td right strong className="text-muted">
+                    {op.agentOpsRackFee != null ? money(op.agentOpsRackFee, cur, 0) : '—'}
+                  </Td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,280px)]">
             <div>
               <div className="mb-1.5 text-xs font-medium text-ink-2">How is AgentOps recovered?</div>
               <Segmented<AgentOpsBilling | 'auto'>
@@ -230,12 +325,17 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
               />
             </div>
             {res.agentOpsBilling === 'separate' ? (
-              <Callout tone="good" title="Billed as a separate Managed AgentOps fee">
-                {money(res.agentOpsFee, cur)} per month. Its cost ({moneyCompact(op.pools.agentops, cur)}) is excluded from ABU and ACU prices, so it is recovered once.
+              <Callout tone={aoMargin != null && aoMargin < 0 ? 'warn' : 'good'} title={`Managed AgentOps fee: ${money(res.agentOpsFee, cur, 0)} / month`}>
+                {res.agentOpsFeeBasis === 'discount'
+                  ? `Team at rack rate (${moneyCompact(op.agentOpsRackFee ?? 0, cur)}) less ${pctFmt(est.discountPct, 1)} discount`
+                  : res.agentOpsFeeBasis === 'override'
+                    ? 'Customer-specific fee'
+                    : `Team cost at ${pctFmt(est.targetMargin, 1)} target margin`}
+                {aoMargin != null && ` · margin ${pctFmt(aoMargin, 1)}`}. Its cost ({moneyCompact(op.pools.agentops, cur)}) is excluded from ABU and ACU prices, so it is recovered once.
               </Callout>
             ) : (
               <Callout tone="info" title="Bundled into unit prices">
-                AgentOps cost is recovered through the ABU/ACU price and no separate fee is charged.
+                AgentOps cost is recovered through the ABU/ACU price at the target margin, so no discount applies and no separate fee is charged.
               </Callout>
             )}
             <NumberField
@@ -245,7 +345,7 @@ export function Step3Costs({ est, res, update }: { est: EstimateInputs; res: Est
               nullable
               min={0}
               prefix={sym}
-              placeholder="Auto from rate card"
+              placeholder="Auto from the AgentOps team"
             />
           </div>
         </div>

@@ -96,6 +96,8 @@ export interface PriceBook {
   acuPrice: Dec | null;
   abuPool: Dec;
   agentOpsFee: Dec;
+  /** How the AgentOps fee was set. */
+  agentOpsFeeBasis: 'discount' | 'margin' | 'override';
   fixedFee: Dec;
   subscriptionUnitPrice: Dec;
   subscriptionUnits: Dec;
@@ -168,7 +170,19 @@ export function buildPriceBook(inp: EstimateInputs, base: YearState, rec: Recomm
   };
   const abuPrice = c.abuPriceOverride != null ? d(c.abuPriceOverride) : unitPrice(abus);
   const acuPrice = c.acuPriceOverride != null ? d(c.acuPriceOverride) : unitPrice(base.acus);
-  const agentOpsFee = c.agentOpsFeeOverride != null ? d(c.agentOpsFeeOverride) : priceFromMargin(op.pools.agentops, m);
+  // AgentOps fee: a customer-specific override wins; otherwise the team at
+  // rack rate less the estimate's discount (people pricing = discount), or
+  // AgentOps cost ÷ (1 − target margin). A manual AgentOps cost override has
+  // no rack rate, so it always prices on margin.
+  const aoRack = op.agentOpsRack;
+  const agentOpsFeeBasis: PriceBook['agentOpsFeeBasis'] =
+    c.agentOpsFeeOverride != null ? 'override' : inp.peoplePricing === 'discount' && aoRack != null ? 'discount' : 'margin';
+  const agentOpsFee =
+    agentOpsFeeBasis === 'override'
+      ? d(c.agentOpsFeeOverride)
+      : agentOpsFeeBasis === 'discount' && aoRack != null
+        ? aoRack.times(ONE.minus(clamp(pct(inp.discountPct ?? 0), 0, 1)))
+        : priceFromMargin(op.pools.agentops, m);
   const fixedFee = priceFromMargin(op.total, m);
 
   const units = D.max(0, d(c.subscriptionUnits));
@@ -199,6 +213,8 @@ export function buildPriceBook(inp: EstimateInputs, base: YearState, rec: Recomm
       acuPrice: opt(L.acuPrice),
       abuPool: unitPool,
       agentOpsFee: d(L.agentOpsFee),
+      // Locked prices hold the agreed fee, whatever its original basis.
+      agentOpsFeeBasis: 'override',
       fixedFee: d(L.fixedFee),
       subscriptionUnitPrice: d(L.subscriptionUnitPrice),
       subscriptionUnits: units,
@@ -221,6 +237,7 @@ export function buildPriceBook(inp: EstimateInputs, base: YearState, rec: Recomm
     acuPrice,
     abuPool: unitPool,
     agentOpsFee,
+    agentOpsFeeBasis,
     fixedFee,
     subscriptionUnitPrice,
     subscriptionUnits: units,

@@ -6,6 +6,7 @@ import type { CurrencyCode, EstimateInputs, RateCard } from '@/engine/types';
 import { DEFAULT_RATE_CARD } from '@/data/rateCard';
 import { buildSamples } from '@/data/samples';
 import { createEstimate, newId } from '@/data/templates';
+import { normalizeEstimate, normalizeRateCard } from '@/data/migrate';
 
 export type Role = 'consultant' | 'commercial' | 'admin';
 
@@ -144,7 +145,8 @@ export const useStore = create<State>()(
 
       importEstimates: (list) => {
         const valid = list.filter((e) => e && typeof e === 'object' && e.processId && e.commercial && e.value);
-        const imported = valid.map((e) => ({ ...e, id: newId(), isSample: false, updatedAt: now() }));
+        const rc = get().rateCard;
+        const imported = valid.map((e) => ({ ...normalizeEstimate(e, rc), id: newId(), isSample: false, updatedAt: now() }));
         set((s) => ({ estimates: [...imported, ...s.estimates] }));
         get().log('Imported estimates', `${imported.length} estimate(s)`);
         return imported.length;
@@ -175,13 +177,35 @@ export const useStore = create<State>()(
       restoreRateCard: (version) => {
         const h = get().rateCardHistory.find((x) => x.version === version);
         if (!h) return;
-        set({ rateCard: h.rateCard });
+        set({ rateCard: normalizeRateCard(h.rateCard) });
         get().log('Restored rate card', version);
       },
     }),
     {
       name: 'ai-agent-pricing-calculator',
-      version: 1,
+      version: 2,
+      // v1 → v2: people rate card (designations with rack and cost rates),
+      // AgentOps team staffing and discount pricing. Rate cards and estimates
+      // are upgraded in place; sample projects are rebuilt on the new rates.
+      migrate: (persisted, version) => {
+        const st = (persisted ?? {}) as Partial<State> & Record<string, unknown>;
+        if (version < 2) {
+          const rateCard = normalizeRateCard(st.rateCard as RateCard | undefined);
+          const history = Array.isArray(st.rateCardHistory) ? st.rateCardHistory : [];
+          const own = (Array.isArray(st.estimates) ? st.estimates : []).filter((e) => !e.isSample).map((e) => normalizeEstimate(e, rateCard));
+          const samples = st.seeded ? buildSamples(rateCard) : [];
+          return {
+            ...st,
+            rateCard,
+            rateCardHistory: [
+              { version: rateCard.version, publishedAt: new Date().toISOString(), note: 'People rate card and discount pricing', rateCard },
+              ...history.filter((h) => h.version !== rateCard.version).map((h) => ({ ...h, rateCard: normalizeRateCard(h.rateCard) })),
+            ].slice(0, 50),
+            estimates: [...own, ...samples],
+          };
+        }
+        return st;
+      },
       storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
       partialize: (s) => ({

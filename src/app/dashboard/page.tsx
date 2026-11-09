@@ -52,7 +52,11 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Stat label="1 · Implementation price" value={moneyCompact(res.implementation.price, cur)} sub={`One-time · delivery cost ${moneyCompact(res.implementation.deliveryCost, cur)} at ${pctFmt(res.implementation.marginPct, 0)} margin`} tip={TIPS.implementationPrice} />
+        <Stat label="1 · Implementation price" value={moneyCompact(res.implementation.price, cur)} sub={
+            res.implementation.pricingBasis === 'discount'
+              ? `One-time · rack ${moneyCompact(res.implementation.rackFee, cur)} less ${pctFmt(res.implementation.discountPct, 0)} discount · margin ${pctFmt(res.implementation.actualMarginPct, 0)}`
+              : `One-time · delivery cost ${moneyCompact(res.implementation.deliveryCost, cur)} at ${pctFmt(res.implementation.marginPct, 0)} margin`
+          } tip={TIPS.implementationPrice} />
         <Stat label="2 · Monthly operating cost" value={moneyCompact(res.operating.total, cur)} sub={`${moneyCompact(res.operating.annual, cur)} per year · ${unitPrice(res.operating.perSubmittedTxn, cur)} per transaction`} tip={TIPS.monthlyCost} />
         <Stat label="3 · Cost per successful ABU" value={unitPrice(res.abu.costPerAbuFullyLoaded, cur)} sub={`${num(res.abu.weighted)} accepted weighted ABUs / month`} tip={TIPS.costPerAbu} />
         <Stat

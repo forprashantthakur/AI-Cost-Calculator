@@ -20,6 +20,13 @@ export function validate(inp: EstimateInputs, raw: EstimateInputs, rc: RateCard,
   if (inp.targetMargin >= 95) err('Target gross margin is capped at 95% (price = cost ÷ (1 − margin)).', 'targetMargin');
   if (inp.targetMargin < 0) err('Target gross margin cannot be negative.', 'targetMargin');
   if (inp.implMarginPct >= 95) err('Implementation margin is capped at 95%.', 'implMarginPct');
+  if ((inp.discountPct ?? 0) < 0 || (inp.discountPct ?? 0) > 100) err('Discount must be between 0% and 100%.', 'discountPct');
+  if (inp.peoplePricing === 'discount' && r.implementation.pricingBasis === 'discount' && r.implementation.actualMarginPct < 0)
+    warn(`At a ${inp.discountPct}% discount the implementation fee is below delivery cost (margin ${r.implementation.actualMarginPct.toFixed(1)}%).`, 'discountPct');
+  if (inp.peoplePricing === 'discount' && inp.implMode === 'simple')
+    info('Simple implementation mode has no rack-rate fee, so implementation is priced on target margin. Use detailed mode to price at a discount off rack rates.');
+  if (inp.peoplePricing === 'discount' && inp.agentOpsOverride != null)
+    info('A manual AgentOps cost has no rack rate, so the AgentOps fee is priced on target margin rather than at a discount.');
   if (inp.agents < 1) warn('At least one AI agent is normally required.', 'agents');
   if (inp.cachedInputPct > 100 || inp.cachedInputPct < 0) err('Cached input share must be between 0% and 100%.', 'cachedInputPct');
   if (inp.aiAssistedMinutes > inp.manualMinutes)
@@ -59,6 +66,8 @@ export function validate(inp: EstimateInputs, raw: EstimateInputs, rc: RateCard,
     if (proc.sdlcDriver && !raw.sdlc?.deriveVolume)
       info('Monthly volume is entered manually rather than derived from SDLC drivers.');
   }
+  if (r.agentOpsBilling === 'separate' && r.agentOpsFeeBasis === 'discount' && r.agentOpsFee < r.operating.pools.agentops)
+    warn(`At a ${inp.discountPct}% discount the AgentOps fee is below the AgentOps team cost.`, 'discountPct');
   if (inp.sla === 'premium' && r.agentOpsBilling === 'bundled')
     info('Premium SLA with AgentOps bundled into unit prices — consider billing AgentOps separately for transparency.');
   return issues;

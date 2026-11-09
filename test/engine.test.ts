@@ -5,6 +5,7 @@ import { PROCESSES, INDUSTRIES } from '@/data/catalog';
 import { createEstimate, composeWorkflow, convertEstimateCurrency } from '@/data/templates';
 import { buildSamples } from '@/data/samples';
 import { RC, simpleEstimate } from './fixtures';
+import { normalizeEstimate, normalizeRateCard } from '@/data/migrate';
 
 const line = (r: ReturnType<typeof computeEstimate>, key: string) => r.operating.lines.find((l) => l.key === key)!.monthly;
 
@@ -143,10 +144,68 @@ describe('margins and cost separation', () => {
     expect(b.models.abu.annualRevenue - a.models.abu.annualRevenue).toBeCloseTo((999999 - 10000) / 0.7, 4);
   });
 
-  test('detailed implementation = Σ hours × role rate', () => {
-    const est = simpleEstimate({ implMode: 'detailed', implActivities: [{ id: 'x', label: 'X', roleId: 'ai', hours: 100 }] });
-    const r = computeEstimate(est, RC);
-    expect(r.implementation.deliveryCost).toBe(100 * 65);
+});
+
+describe('people rate card, discount pricing and the AgentOps team', () => {
+  const mgr = [{ id: 'x', label: 'X', roleId: 'implement-manager', hours: 100 }];
+
+  test('detailed implementation cost = Σ hours × designation cost rate; rack fee = Σ hours × rack rate', () => {
+    const r = computeEstimate(simpleEstimate({ currency: 'INR', implMode: 'detailed', implActivities: mgr, peoplePricing: 'margin' }), RC);
+    expect(r.implementation.deliveryCost).toBe(100 * 2784);
+    expect(r.implementation.rackFee).toBe(100 * 6000);
+    expect(r.implementation.price).toBeCloseTo(278400 / 0.7, 6);
+    expect(r.implementation.pricingBasis).toBe('margin');
+  });
+
+  test('rack rate less discount: price, margin earned and the discount for the target margin', () => {
+    const r = computeEstimate(simpleEstimate({ currency: 'INR', implMode: 'detailed', implActivities: mgr, peoplePricing: 'discount', discountPct: 25 }), RC);
+    expect(r.implementation.pricingBasis).toBe('discount');
+    expect(r.implementation.price).toBe(450000);
+    expect(r.implementation.effectiveDiscountPct).toBeCloseTo(25, 9);
+    expect(r.implementation.actualMarginPct).toBeCloseTo(((450000 - 278400) / 450000) * 100, 6);
+    expect(r.implementation.discountAtTargetMargin).toBeCloseTo((1 - 278400 / 0.7 / 600000) * 100, 6);
+    expect(r.checks.find((c) => c.id === 'impl-discount')?.pass).toBe(true);
+  });
+
+  test('simple mode has no rack fee, so it prices on margin even at a discount', () => {
+    const r = computeEstimate(simpleEstimate({ implMode: 'simple', implSimpleCost: 10000, peoplePricing: 'discount', discountPct: 50 }), RC);
+    expect(r.implementation.pricingBasis).toBe('margin');
+    expect(r.implementation.rackFee).toBeNull();
+    expect(r.implementation.price).toBeCloseTo(10000 / 0.7, 6);
+  });
+
+  test('people rates convert from the rate-card currency into the estimate currency', () => {
+    const r = computeEstimate(simpleEstimate({ currency: 'USD', implMode: 'detailed', implActivities: mgr, peoplePricing: 'margin' }), RC);
+    expect(r.implementation.deliveryCost).toBeCloseTo((100 * 2784) / 85, 6);
+  });
+
+  test('AgentOps team cost = hours × cost rate; separate fee = rack fee × (1 − discount) or cost ÷ (1 − margin)', () => {
+    const base = { currency: 'INR' as const, agents: 3, sla: 'standard' as const, agentOpsOverride: null };
+    const sep = { agentOpsBilling: 'separate' as const };
+    const d20 = computeEstimate(simpleEstimate({ ...base, peoplePricing: 'discount', discountPct: 20, commercial: sep as never }), RC);
+    expect(d20.operating.pools.agentops).toBe(158931);
+    expect(d20.operating.agentOpsRackFee).toBe(446000);
+    expect(d20.agentOpsFeeBasis).toBe('discount');
+    expect(d20.agentOpsFee).toBe(356800);
+    expect(d20.checks.filter((c) => c.id.startsWith('agentops')).every((c) => c.pass)).toBe(true);
+    const mg = computeEstimate(simpleEstimate({ ...base, peoplePricing: 'margin', commercial: sep as never }), RC);
+    expect(mg.agentOpsFeeBasis).toBe('margin');
+    expect(mg.agentOpsFee).toBeCloseTo(158931 / 0.6, 6);
+    const ovr = computeEstimate(simpleEstimate({ ...base, agentOpsOverride: 100000, peoplePricing: 'discount', discountPct: 20, commercial: sep as never }), RC);
+    expect(ovr.operating.agentOpsRackFee).toBeNull();
+    expect(ovr.agentOpsFeeBasis).toBe('margin');
+  });
+
+  test('saved data from before the people rate card is upgraded', () => {
+    const legacyRc = { ...RC, resourceRates: undefined, agentOpsTeam: undefined, implRoles: [{ id: 'ai', label: 'AI engineer', ratePerHour: 65 }], agentOps: [] } as never;
+    const rc = normalizeRateCard(legacyRc);
+    expect(rc.resourceRates.length).toBe(19);
+    expect(rc.agentOpsTeam.length).toBeGreaterThan(0);
+    const legacyEst = { ...simpleEstimate(), peoplePricing: undefined, discountPct: undefined, implActivities: [{ id: 'dev', label: 'Dev', roleId: 'ai', hours: 10 }] } as never;
+    const e = normalizeEstimate(legacyEst, rc);
+    expect(e.peoplePricing).toBe('margin');
+    expect(e.discountPct).toBe(0);
+    expect(e.implActivities[0].roleId).toBe('implement-senior-consultant');
   });
 });
 

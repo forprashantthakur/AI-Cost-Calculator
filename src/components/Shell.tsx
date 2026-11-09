@@ -105,7 +105,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <footer className="no-print border-t border-line bg-surface">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-4 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span>
-            All rates, samples and client names are <strong className="text-ink-2">illustrative</strong>. Replace rates with contracted or published figures, with sources and effective dates, before client use.
+            People rates come from your rate card (Settings). Model, cloud and tool rates, samples and client names are <strong className="text-ink-2">illustrative</strong> — replace them with contracted figures before client use.
           </span>
           <span className="flex gap-4">
             <Link href="/methodology/" className="hover:text-brand">
